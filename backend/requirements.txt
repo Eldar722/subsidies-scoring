@@ -9,3 +9,5 @@ joblib==1.4.0
 openpyxl==3.1.2
 python-dotenv==1.0.1
 scipy==1.13.0
+google-generativeai==0.5.4
+supabase==2.4.2

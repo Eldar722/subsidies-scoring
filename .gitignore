@@ -1,24 +1,32 @@
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
-.env
 venv/
-.venv/
-
-# ML модель и данные — не коммитить
+.env
+**/.env
 backend/model.pkl
-backend/data/
 
 # Node
-node_modules/
+frontend/node_modules/
 frontend/dist/
-frontend/.env
+frontend/.env.local
 
-# OS
-.DS_Store
-Thumbs.db
+# Data — реальные данные не в git
+backend/data/*.xlsx
+backend/data/*.csv
 
 # IDE
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
+
+# Claude
+CLAUDE.md
+.claude/
+PROMPT_SCAFFOLDING.md
+
+# Docs
+*.docx
+*.doc
