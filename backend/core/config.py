@@ -1,7 +1,12 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Загружаем .env из корня монорепо (на уровень выше backend/)
+_root_env = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(_root_env)
+# Фолбэк: локальный backend/.env (если есть)
+load_dotenv(override=False)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
