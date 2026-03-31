@@ -30,3 +30,27 @@ PROMPT_SCAFFOLDING.md
 # Docs
 *.docx
 *.doc
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js / React
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/coverage/
+frontend/.env*
+
+# Python / Environment
+.pytest_cache/
+htmlcov/
+.coverage
+*.sqlite3
+.pytest_cache/
+
+# Misc
+.vercel/
+*.pem

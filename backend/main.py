@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.state import load_model, load_data
-from routers import health, metrics, producers, shortlist, fairness, simulate
+from routers import health, metrics, producers, shortlist, fairness, simulate, pipeline
 from services import gemini
 
 app = FastAPI(title="Subsidy Scoring API", version="2.0.0")
@@ -20,7 +20,7 @@ app.include_router(shortlist.router, prefix="/api")
 app.include_router(fairness.router, prefix="/api")
 app.include_router(simulate.router, prefix="/api")
 app.include_router(gemini.router, prefix="/api")
-
+app.include_router(pipeline.router, prefix="/api")
 
 @app.on_event("startup")
 async def startup():
