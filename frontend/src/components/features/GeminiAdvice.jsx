@@ -1,4 +1,5 @@
-export function GeminiAdvice({ producerId }) {
-  // TODO P2: Gemini совет + bg-blue-50 Card
-  return <div className="text-slate-400 text-sm p-4">GeminiAdvice placeholder</div>
+// Implemented inline in ProducerPage — kept for future extraction
+ 
+export function GeminiAdvice({ producerId: _producerId }) {
+  return null
 }
