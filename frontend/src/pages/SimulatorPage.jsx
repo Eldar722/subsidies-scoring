@@ -3,16 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion' // eslint-disable-line n
 import { useSimulator } from '../hooks/useSimulator'
 import { Badge } from '../components/ui/Badge'
 import { Skeleton } from '../components/ui/Skeleton'
+import { ArrowUp, ArrowDown, Star } from '@phosphor-icons/react'
 
 const SLIDERS = [
-  { key: 'completion_rate', label: 'Результативность', emoji: '✅', description: 'Доля успешно исполненных заявок', defaultValue: 35 },
-  { key: 'approval_rate',   label: 'Одобряемость заявок', emoji: '📋', description: 'Процент одобренных из поданных', defaultValue: 25 },
-  { key: 'diversification', label: 'Диверсификация', emoji: '🌿', description: 'Разнообразие видов животноводства', defaultValue: 20 },
-  { key: 'activity',        label: 'Активность подачи', emoji: '📨', description: 'Регулярность подачи заявок', defaultValue: 10 },
-  { key: 'working_hours',   label: 'Рабочие часы', emoji: '⏱', description: 'Активность в рабочие часы', defaultValue: 10 },
+  { key: 'completion_rate', label: 'Результативность',    description: 'Доля успешно исполненных заявок', defaultValue: 35 },
+  { key: 'approval_rate',   label: 'Одобряемость',        description: 'Процент одобренных из поданных',  defaultValue: 25 },
+  { key: 'diversification', label: 'Диверсификация',      description: 'Разнообразие видов животноводства', defaultValue: 20 },
+  { key: 'activity',        label: 'Активность',          description: 'Регулярность подачи заявок',      defaultValue: 10 },
+  { key: 'working_hours',   label: 'Рабочие часы',        description: 'Активность в рабочие часы',       defaultValue: 10 },
 ]
 
 const initialWeights = Object.fromEntries(SLIDERS.map(s => [s.key, s.defaultValue]))
+
+const SLIDER_COLORS = ['#2563EB', '#7C3AED', '#059669', '#D97706', '#DC2626']
 
 export default function SimulatorPage() {
   const [weights, setWeights] = useState(initialWeights)
@@ -20,6 +23,7 @@ export default function SimulatorPage() {
   const timerRef = useRef(null)
 
   const total = Object.values(weights).reduce((s, v) => s + v, 0)
+  const isBalanced = total === 100
 
   useEffect(() => {
     clearTimeout(timerRef.current)
@@ -42,71 +46,125 @@ export default function SimulatorPage() {
   }
 
   const shortlist = simResult?.shortlist || []
-  const entered = simResult?.entered || []
-  const left = simResult?.left || []
+  const entered   = simResult?.entered   || []
+  const left      = simResult?.left      || []
+
+  // Donut SVG for total %
+  const r = 14
+  const circ = 2 * Math.PI * r
+  const fill = Math.min(total / 100, 1)
+  const dashArray = `${fill * circ} ${circ}`
 
   return (
-    <div className="flex gap-6">
-      {/* Sliders */}
-      <div className="w-80 flex-shrink-0">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 sticky top-6">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Веса факторов</h2>
-          <p className="text-xs text-slate-400 mb-5">Изменяй веса — шортлист обновляется автоматически</p>
-          <div className="space-y-5">
-            {SLIDERS.map(s => (
+    <div className="flex gap-5 max-w-full">
+      {/* Controls */}
+      <div className="w-72 flex-shrink-0">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm sticky top-20 overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Веса факторов</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Авто-нормировка до 100%</p>
+            </div>
+            {/* Donut */}
+            <div className="relative w-9 h-9">
+              <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+                <circle cx="18" cy="18" r={r} fill="none" stroke="#E2E8F0" strokeWidth="4" />
+                <circle
+                  cx="18" cy="18" r={r} fill="none"
+                  stroke={isBalanced ? '#16A34A' : '#2563EB'}
+                  strokeWidth="4"
+                  strokeDasharray={dashArray}
+                  strokeLinecap="round"
+                  className="transition-all duration-300"
+                />
+              </svg>
+              <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold ${isBalanced ? 'text-green-600' : 'text-blue-600'}`}>
+                {total}
+              </span>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 space-y-5">
+            {SLIDERS.map((s, idx) => (
               <div key={s.key}>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-sm font-medium text-slate-700">{s.emoji} {s.label}</label>
-                  <span className="text-sm font-bold text-blue-600 tabular-nums w-10 text-right">{weights[s.key]}%</span>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">{s.label}</label>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: SLIDER_COLORS[idx] }}>
+                    {weights[s.key]}<sup className="text-[9px] opacity-70">%</sup>
+                  </span>
                 </div>
-                <p className="text-xs text-slate-400 mb-1.5">{s.description}</p>
-                <input type="range" min={0} max={100} value={weights[s.key]}
+                <p className="text-[10px] text-slate-400 mb-1.5 leading-snug">{s.description}</p>
+                <input
+                  type="range" min={0} max={100} value={weights[s.key]}
                   onChange={e => handleChange(s.key, parseInt(e.target.value))}
-                  className="w-full accent-blue-600 h-1.5" />
+                  className="w-full h-1 rounded-full cursor-pointer"
+                  style={{ accentColor: SLIDER_COLORS[idx] }}
+                />
               </div>
             ))}
           </div>
-          <div className="mt-5 pt-4 border-t border-slate-100 flex justify-between items-center">
-            <span className="text-sm text-slate-500">Сумма весов:</span>
-            <span className={`text-sm font-bold tabular-nums ${total === 100 ? 'text-green-600' : 'text-amber-600'}`}>
-              {total}% {total === 100 ? '✓' : '⚠ авто-нормировка'}
-            </span>
+
+          <div className="px-5 pb-4">
+            <button
+              onClick={() => setWeights(initialWeights)}
+              className="w-full text-xs text-slate-500 hover:text-slate-700 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-200 font-medium"
+            >
+              Сбросить к умолчаниям
+            </button>
           </div>
-          <button onClick={() => setWeights(initialWeights)}
-            className="mt-3 w-full text-xs text-slate-500 hover:text-slate-700 py-1.5 rounded-lg hover:bg-slate-50 transition-colors border border-slate-200">
-            Сбросить к умолчаниям
-          </button>
         </div>
       </div>
 
       {/* Results */}
-      <div className="flex-1 space-y-4">
+      <div className="flex-1 min-w-0 space-y-4">
+        {/* Stats row */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <div className="text-xs text-green-600 font-medium uppercase tracking-wide mb-1">Вошли в шортлист</div>
-            <div className="text-3xl font-bold text-green-700">+{entered.length}</div>
+          <div className="bg-white border border-green-200 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
+                <ArrowUp size={12} className="text-green-600" weight="bold" />
+              </div>
+              <span className="text-xs text-green-600 font-semibold uppercase tracking-wide">Вошли</span>
+            </div>
+            <div className="text-2xl font-bold text-green-700">+{entered.length}</div>
           </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <div className="text-xs text-red-600 font-medium uppercase tracking-wide mb-1">Вышли из шортлиста</div>
-            <div className="text-3xl font-bold text-red-700">−{left.length}</div>
+
+          <div className="bg-white border border-red-200 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-red-100 rounded-lg flex items-center justify-center">
+                <ArrowDown size={12} className="text-red-500" weight="bold" />
+              </div>
+              <span className="text-xs text-red-500 font-semibold uppercase tracking-wide">Вышли</span>
+            </div>
+            <div className="text-2xl font-bold text-red-600">−{left.length}</div>
           </div>
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-            <div className="text-xs text-purple-600 font-medium uppercase tracking-wide mb-1">Скрытых талантов</div>
-            <div className="text-3xl font-bold text-purple-700">{simResult?.hidden_talent_count ?? '—'}/20</div>
+
+          <div className="bg-white border border-purple-200 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Star size={12} className="text-purple-600" weight="fill" />
+              </div>
+              <span className="text-xs text-purple-600 font-semibold uppercase tracking-wide">Таланты</span>
+            </div>
+            <div className="text-2xl font-bold text-purple-700">{simResult?.hidden_talent_count ?? '—'}<span className="text-sm font-normal text-purple-400">/20</span></div>
             {simResult && (
-              <div className="mt-2 bg-white rounded-full h-1.5 overflow-hidden">
-                <div className="h-full bg-purple-500 rounded-full transition-all duration-500"
-                  style={{ width: `${((simResult.hidden_talent_count || 0) / 20) * 100}%` }} />
+              <div className="mt-2 bg-purple-100 rounded-full h-1 overflow-hidden">
+                <div
+                  className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                  style={{ width: `${((simResult.hidden_talent_count || 0) / 20) * 100}%` }}
+                />
               </div>
             )}
           </div>
         </div>
 
+        {/* Shortlist */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700">Шортлист (топ-20)</h3>
+          <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800">Шортлист (топ-20)</h3>
             {isLoading && <span className="text-xs text-slate-400 animate-pulse">Пересчёт...</span>}
           </div>
+
           <div className="divide-y divide-slate-100">
             {isLoading && !simResult
               ? Array.from({ length: 8 }).map((_, i) => (
@@ -117,18 +175,27 @@ export default function SimulatorPage() {
                   {shortlist.map((p, idx) => {
                     const isEntered = entered.some(e => e.producer_id === p.producer_id)
                     return (
-                      <motion.div key={p.producer_id} layout
-                        initial={{ opacity: 0, x: isEntered ? -16 : 0 }}
+                      <motion.div
+                        key={p.producer_id}
+                        layout
+                        initial={{ opacity: 0, x: isEntered ? -12 : 0 }}
                         animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 16 }}
-                        transition={{ duration: 0.2 }}
-                        className={`px-5 py-3 flex items-center gap-4 transition-colors ${isEntered ? 'border-l-4 border-green-500 bg-green-50' : 'border-l-4 border-transparent hover:bg-slate-50'}`}>
-                        <span className="text-xs text-slate-400 w-5 tabular-nums">{idx + 1}</span>
-                        <span className="font-mono text-xs text-slate-700 w-20">{p.producer_id}</span>
-                        <span className="text-xs text-slate-500 flex-1">{p.region} · {p.direction}</span>
+                        exit={{ opacity: 0, x: 12 }}
+                        transition={{ duration: 0.18 }}
+                        className={`px-5 py-3 flex items-center gap-3 transition-colors ${
+                          isEntered
+                            ? 'border-l-2 border-green-500 bg-green-50/60'
+                            : 'border-l-2 border-transparent hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="text-xs text-slate-300 w-5 tabular-nums text-right">{idx + 1}</span>
+                        <span className="font-mono text-xs text-slate-700 font-semibold w-24">{p.producer_id}</span>
+                        <span className="text-xs text-slate-400 flex-1 truncate">{p.region}{p.direction ? ` · ${p.direction}` : ''}</span>
                         {p.hidden_talent && <Badge variant="hidden_talent" />}
-                        {isEntered && <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">↑ Вошёл</span>}
-                        <span className={`text-xs font-bold tabular-nums ${p.ml_score >= 0.8 ? 'text-green-600' : p.ml_score >= 0.6 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {isEntered && (
+                          <span className="text-[10px] font-bold text-green-700 bg-green-100 border border-green-200 px-1.5 py-0.5 rounded-full">↑ Вошёл</span>
+                        )}
+                        <span className={`text-xs font-bold tabular-nums ${p.ml_score >= 0.8 ? 'text-green-600' : p.ml_score >= 0.6 ? 'text-amber-600' : 'text-red-500'}`}>
                           {(p.ml_score * 100).toFixed(1)}%
                         </span>
                       </motion.div>
@@ -137,14 +204,19 @@ export default function SimulatorPage() {
                 </AnimatePresence>
               )
             }
+
             <AnimatePresence>
               {left.map(p => (
-                <motion.div key={`left-${p.producer_id}`} initial={{ opacity: 1 }} exit={{ opacity: 0, height: 0 }}
-                  className="px-5 py-3 flex items-center gap-4 border-l-4 border-red-400 bg-red-50">
-                  <span className="text-xs text-slate-400 w-5">—</span>
-                  <span className="font-mono text-xs text-slate-500 w-20 line-through">{p.producer_id}</span>
-                  <span className="text-xs text-slate-400 flex-1">{p.region}</span>
-                  <span className="text-xs font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">↓ Вышел</span>
+                <motion.div
+                  key={`left-${p.producer_id}`}
+                  initial={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="px-5 py-3 flex items-center gap-3 border-l-2 border-red-400 bg-red-50/50"
+                >
+                  <span className="text-xs text-slate-300 w-5">—</span>
+                  <span className="font-mono text-xs text-slate-400 w-24 line-through">{p.producer_id}</span>
+                  <span className="text-xs text-slate-400 flex-1 truncate">{p.region}</span>
+                  <span className="text-[10px] font-bold text-red-600 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded-full">↓ Вышел</span>
                 </motion.div>
               ))}
             </AnimatePresence>

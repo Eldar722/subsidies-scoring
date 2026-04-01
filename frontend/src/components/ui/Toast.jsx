@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion' // eslint-disable-line no-unused-vars
 import { CheckCircle, XCircle, Info, X } from '@phosphor-icons/react'
 
 const ToastContext = createContext(null)
@@ -58,6 +58,7 @@ export function ToastProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const ctx = useContext(ToastContext)
   if (!ctx) throw new Error('useToast must be used within ToastProvider')

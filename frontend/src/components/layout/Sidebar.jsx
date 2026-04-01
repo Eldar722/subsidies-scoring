@@ -1,13 +1,13 @@
 import { NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChartBar, Sliders, Scales, MapTrifold, Leaf, Circle } from '@phosphor-icons/react'
+import { ChartBar, Sliders, Scales, MapTrifold, Leaf } from '@phosphor-icons/react'
 import { getHealth } from '../../services/api'
 
 const NAV_ITEMS = [
-  { to: '/dashboard', icon: ChartBar,    label: 'Дашборд' },
-  { to: '/simulator', icon: Sliders,     label: 'Симулятор' },
-  { to: '/fairness',  icon: Scales,      label: 'Справедливость' },
-  { to: '/map',       icon: MapTrifold,  label: 'Карта' },
+  { to: '/dashboard', icon: ChartBar, label: 'Дашборд' },
+  { to: '/simulator', icon: Sliders, label: 'Симулятор' },
+  { to: '/fairness', icon: Scales, label: 'Справедливость' },
+  { to: '/map', icon: MapTrifold, label: 'Карта' },
 ]
 
 export function Sidebar() {
@@ -20,42 +20,65 @@ export function Sidebar() {
   const isOnline = data?.status === 'ok'
 
   return (
-    <aside className="fixed left-0 top-0 h-screen bg-white border-r border-slate-200 flex flex-col z-40" style={{ width: 240 }}>
-      <div className="px-5 py-6 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <Leaf size={20} weight="fill" className="text-blue-600" />
-          <span className="text-blue-600 font-bold text-base tracking-tight">AI Субсидии</span>
+    <aside
+      className="fixed left-0 top-0 h-screen bg-white border-r border-slate-100 flex flex-col z-40"
+      style={{ width: 'var(--sidebar-width, 240px)' }}
+    >
+      {/* Logo */}
+      <div className="px-4 h-14 flex items-center border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <Leaf size={14} weight="fill" className="text-white" />
+          </div>
+          <div>
+            <div className="text-slate-900 font-semibold text-sm leading-none">AI Субсидии</div>
+            <div className="text-slate-400 text-[10px] leading-none mt-0.5">Decentrathon 5.0</div>
+          </div>
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
-        {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 no-underline ${
-                isActive
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
+        <p className="px-2 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Навигация</p>
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 no-underline ${isActive
                   ? 'bg-blue-50 text-blue-700'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon size={16} weight={isActive ? 'fill' : 'regular'} />
-                <span>{label}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-600 rounded-r-full" />
+                  )}
+                  <Icon size={16} weight={isActive ? 'fill' : 'regular'} className="flex-shrink-0" />
+                  <span>{item.label}</span>
+                </>
+              )}
+            </NavLink>
+          )
+        })}
       </nav>
 
-      <div className="px-4 py-4 border-t border-slate-100">
+      {/* Footer */}
+      <div className="px-4 py-4 border-t border-slate-100 space-y-3">
         <div className="flex items-center gap-2">
-          <Circle size={8} weight="fill" className={isOnline ? 'text-green-500' : 'text-red-400'} />
-          <span className="text-xs text-slate-400">{isOnline ? 'Сервер онлайн' : 'Нет соединения'}</span>
+          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md ${isOnline
+              ? 'bg-green-50 text-green-700 border border-green-100'
+              : 'bg-red-50 text-red-600 border border-red-100'
+            }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-400'}`} />
+            {isOnline ? 'API онлайн' : 'Нет соединения'}
+          </span>
         </div>
+        <p className="text-[10px] text-slate-300 font-medium">v2.0 · 2026</p>
       </div>
     </aside>
   )

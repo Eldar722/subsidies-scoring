@@ -1,6 +1,6 @@
 export { Button } from './Button'
 export { Badge, getScoreVariant } from './Badge'
-export { Card } from './Card'
+export { Card, CardHeader, CardBody } from './Card'
 export { Skeleton } from './Skeleton'
 export { ToastProvider, useToast } from './Toast'
 export { EmptyState } from './EmptyState'
