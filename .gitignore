@@ -22,15 +22,19 @@ backend/data/*.csv
 .DS_Store
 Thumbs.db
 
-# Claude
+# Claude / Internal instructions
 CLAUDE.md
 .claude/
 PROMPT_SCAFFOLDING.md
+PLAN_BACKEND.md
+PLAN_P3_DEVOPS.md
+backend/CLAUDE.md
+backend/PLAN_ML.md
+frontend/FRONTEND_PLAN.md
 
 # Docs
 *.docx
 *.doc
-backend/PLAN_ML.md
 
 # Logs
 *.log
