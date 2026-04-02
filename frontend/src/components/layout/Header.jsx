@@ -1,69 +1,90 @@
-import { useLocation } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
-import { Lightning } from '@phosphor-icons/react'
-import { runPipeline } from '../../services/api'
-import { useToast } from '../ui/Toast'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft, SignOut, User } from '@phosphor-icons/react'
+import { useAuth } from '../../contexts/AuthContext'
 
-const TITLES = {
-  '/dashboard': 'Дашборд',
-  '/simulator': 'Симулятор весов',
-  '/fairness': 'Анализ справедливости',
-  '/map': 'Карта регионов',
-}
-
-const SUBTITLES = {
-  '/dashboard': 'Шортлист производителей · ML Score · Delta',
-  '/simulator': 'Настройка весов · Живой пересчёт',
-  '/fairness': 'Gini · Kruskal-Wallis · Lorenz · Z-score',
-  '/map': 'Хороплет RK · Статистика по регионам',
+const PAGE_META = {
+  '/dashboard': { title: 'Дашборд',              subtitle: 'Шортлист · ML Score · Delta' },
+  '/simulator': { title: 'Симулятор весов',       subtitle: 'Настройка весов · Живой пересчёт' },
+  '/fairness':  { title: 'Анализ справедливости', subtitle: 'Gini · Kruskal-Wallis · Lorenz' },
+  '/map':       { title: 'Карта регионов',         subtitle: 'Хороплет RK · Статистика по регионам' },
+  '/analytics': { title: 'Аналитика субсидий',    subtitle: 'Эффективность · Красные флаги' },
 }
 
 export function Header() {
   const { pathname } = useLocation()
-  const { showToast } = useToast()
-  const isProducer = pathname.startsWith('/producer/')
-  const title = isProducer ? 'Профиль производителя' : (TITLES[pathname] || 'Дашборд')
-  const subtitle = isProducer ? 'SHAP · Gemini AI · История' : (SUBTITLES[pathname] || '')
+  const navigate = useNavigate()
+  const { user, signOut } = useAuth()
 
-  const { mutate, isPending } = useMutation({
-    mutationFn: runPipeline,
-    onSuccess: (res) => {
-      if (res?.status === 'started') {
-        showToast({ message: 'Пайплайн запущен — обновит модель за ~60–120 сек', type: 'success' })
-      } else {
-        showToast({ message: `Пайплайн завершён за ${res?.duration_seconds ?? '?'}с`, type: 'success' })
-      }
-    },
-    onError: (err) => {
-      const detail = err?.response?.data?.detail || 'Ошибка запуска пайплайна'
-      showToast({ message: detail, type: 'error' })
-    },
-  })
+  const handleLogout = async () => {
+    await signOut()
+    navigate('/login', { replace: true })
+  }
+  const isProducer = pathname.startsWith('/producer/')
+  const meta = isProducer
+    ? { title: 'Профиль производителя', subtitle: 'SHAP · Gemini AI · История' }
+    : (PAGE_META[pathname] || { title: 'Дашборд', subtitle: '' })
 
   return (
     <header
-      className="sticky top-0 z-30 flex items-center justify-between px-6 border-b border-slate-100 bg-white/95 backdrop-blur-sm"
-      style={{ height: 'var(--header-height, 56px)' }}
+      className="sticky top-0 z-30 flex items-center px-6 flex-shrink-0"
+      style={{
+        height:      'var(--header-height, 60px)',
+        background:  'var(--bg-surface)',
+        borderBottom:'1px solid var(--border)',
+        transition:  'background 0.2s ease, border-color 0.2s ease',
+      }}
     >
-      <div>
-        <h1 className="text-sm font-semibold text-slate-900 leading-none">{title}</h1>
-        {subtitle && <p className="text-[11px] text-slate-400 mt-0.5 leading-none">{subtitle}</p>}
+      {isProducer && (
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="mr-3 flex items-center justify-center w-8 h-8 rounded-lg transition-colors flex-shrink-0"
+          style={{ background: 'var(--bg-subtle)', color: 'var(--text-secondary)' }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+          title="Назад"
+        >
+          <ArrowLeft size={15} weight="bold" />
+        </button>
+      )}
+      <div className="flex-1">
+        <h1
+          className="text-sm font-semibold leading-none"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          {meta.title}
+        </h1>
+        {meta.subtitle && (
+          <p
+            className="text-[11px] mt-1 leading-none"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {meta.subtitle}
+          </p>
+        )}
       </div>
 
-      <button
-        onClick={() => mutate()}
-        disabled={isPending}
-        className="inline-flex items-center gap-2 bg-blue-600 text-white text-xs font-medium px-3.5 py-2 rounded-lg shadow-sm hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-      >
-        {isPending
-          ? <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          : <Lightning size={13} weight="fill" />
-        }
-        Запустить пайплайн
-      </button>
+      {/* User info + logout */}
+      {user && (
+        <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--bg-subtle)' }}>
+            <User size={12} style={{ color: 'var(--text-muted)' }} />
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+              {user.email}
+            </span>
+          </div>
+          <button
+            onClick={handleLogout}
+            title="Выйти"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
+            style={{ background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-subtle)'}
+          >
+            <SignOut size={12} />
+            Выйти
+          </button>
+        </div>
+      )}
     </header>
   )
 }

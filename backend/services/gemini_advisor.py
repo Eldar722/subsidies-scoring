@@ -1,15 +1,18 @@
 """
-gemini_advisor.py — AI-советник на базе Gemini 2.0 Flash.
+gemini_advisor.py — AI-советник на базе Groq (Llama-3.3-70b) / Gemini 2.0 Flash.
 Переводит SHAP в русский текст с рекомендациями для комиссии.
+Поддерживает fallback-логику, если один из провайдеров недоступен.
 """
 
 import json
 import time
 import google.generativeai as genai
+from groq import Groq
 from supabase import create_client
-from core.config import GEMINI_API_KEY, SUPABASE_URL, SUPABASE_KEY
+from core.config import GEMINI_API_KEY, GROQ_API_KEY, AI_PROVIDER, SUPABASE_URL, SUPABASE_KEY
 
 genai.configure(api_key=GEMINI_API_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 SYSTEM_PROMPT = """Ты — AI-советник для комиссии МСХ Казахстана по субсидиям в животноводстве.
 Отвечай только на русском языке. Будь конкретным и практичным.
@@ -23,11 +26,21 @@ ML балл: {ml_score:.1%}. FCFS ранг: #{fcfs_rank}. ML ранг: #{ml_rank
 
 Верни JSON:
 {{
-  "score_explanation": "2-3 предложения почему такой балл",
-  "baseline_injustice": "1 предложение — справедлив ли FCFS для этого производителя",
+  "score_explanation": "2-3 предложения почему такой ML-балл с учётом SHAP-факторов",
+  "baseline_injustice": "1 предложение — насколько справедлив FCFS-ранг для этого производителя",
   "recommendations": [
-    {{"action": "конкретное действие", "impact": "+X% к вероятности одобрения"}},
-    {{"action": "второе действие", "impact": "+Y%"}}
+    {{
+      "problem": "конкретная проблема из SHAP (что именно снижает балл)",
+      "cause": "почему это происходит — реальная причина",
+      "action": "конкретное действие для улучшения",
+      "impact": "+X% к вероятности одобрения"
+    }},
+    {{
+      "problem": "вторая проблема",
+      "cause": "причина",
+      "action": "второе действие",
+      "impact": "+Y%"
+    }}
   ]
 }}"""
 
@@ -52,15 +65,43 @@ def _format_shap(shap_items):
     return "\n".join(lines)
 
 
-def get_advice(producer_data: dict, max_retries=2) -> dict:
-    """Получить совет Gemini для одного производителя.
+def _clean_json(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
-    Args:
-        producer_data: dict с ключами producer_id, ml_score, ml_rank,
-                       fcfs_rank, delta, region, direction, shap_top5.
-    Returns:
-        dict: {score_explanation, baseline_injustice, recommendations}
-    """
+
+def _call_groq(prompt: str) -> dict:
+    if not groq_client:
+        raise ValueError("GROQ_API_KEY not configured")
+    response = groq_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        model="llama-3.3-70b-versatile",
+        temperature=0.3,
+        response_format={"type": "json_object"}
+    )
+    text = response.choices[0].message.content
+    return json.loads(_clean_json(text))
+
+
+def _call_gemini(prompt: str) -> dict:
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(
+        [{"role": "user", "parts": [SYSTEM_PROMPT + "\n\n" + prompt]}]
+    )
+    return json.loads(_clean_json(response.text))
+
+
+def get_advice(producer_data: dict, max_retries=2) -> dict:
+    """Получить совет AI (Groq или Gemini) для одного производителя."""
     shap_factors = _format_shap(producer_data.get("shap_top5", []))
     prompt = USER_PROMPT_TEMPLATE.format(
         shap_factors=shap_factors,
@@ -69,26 +110,21 @@ def get_advice(producer_data: dict, max_retries=2) -> dict:
             "fcfs_rank", "ml_rank", "delta"]},
     )
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
-
     for attempt in range(max_retries + 1):
         try:
-            response = model.generate_content(
-                [{"role": "user", "parts": [SYSTEM_PROMPT + "\n\n" + prompt]}]
-            )
-            text = response.text.strip()
-            # Убираем markdown блоки если есть
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
-            return json.loads(text)
+            if AI_PROVIDER.lower() == "groq":
+                try:
+                    return _call_groq(prompt)
+                except Exception as e:
+                    print(f"  [WARN] Groq failed, falling back to Gemini: {e}")
+                    return _call_gemini(prompt)
+            else:
+                return _call_gemini(prompt)
         except (json.JSONDecodeError, Exception) as e:
             if attempt < max_retries:
                 time.sleep(2)
             else:
-                print(f"  [WARN] Gemini failed for {producer_data['producer_id']}: {e}")
+                print(f"  [WARN] All AI providers failed for {producer_data['producer_id']}: {e}")
                 return DEFAULT_ADVICE.copy()
 
 

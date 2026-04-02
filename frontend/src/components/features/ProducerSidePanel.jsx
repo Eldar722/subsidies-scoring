@@ -12,6 +12,8 @@ export function ProducerSidePanel({ producerId, onClose }) {
     queryKey: ['producer', producerId],
     queryFn: () => getProducerDetail(producerId),
     enabled: !!producerId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   })
 
   return (
@@ -30,7 +32,7 @@ export function ProducerSidePanel({ producerId, onClose }) {
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-        className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-50 flex flex-col border-l border-slate-100"
+        className="fixed right-0 top-0 h-screen w-96 bg-white shadow-xl z-50 flex flex-col border-l border-slate-100"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -120,7 +122,7 @@ export function ProducerSidePanel({ producerId, onClose }) {
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50">
           <button
             onClick={() => { navigate(`/producer/${producerId}`); onClose() }}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 shadow-sm"
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 shadow-sm border-0 outline-none"
           >
             Открыть полный профиль
             <ArrowRight size={13} />

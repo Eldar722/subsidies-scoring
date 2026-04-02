@@ -47,7 +47,15 @@ def compute_shap(base_model, X, producer_ids, top_n=5):
     Returns:
         list[dict] — [{producer_id, feature, shap_value, feature_value, feature_label}, ...]
     """
-    explainer = shap.TreeExplainer(base_model)
+    # Use precomputed explainer if available (avoids ~200ms construction on every request)
+    try:
+        import core.state as state
+        if state.SHAP_EXPLAINER is not None:
+            explainer = state.SHAP_EXPLAINER
+        else:
+            explainer = shap.TreeExplainer(base_model)
+    except Exception:
+        explainer = shap.TreeExplainer(base_model)
     shap_values = explainer.shap_values(X)
 
     features = list(X.columns)

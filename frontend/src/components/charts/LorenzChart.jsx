@@ -1,8 +1,9 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
+// Backend returns {x: population_share, y: cumulative_share}
 const EQUALITY_LINE = [
-  { population: 0, cumulative_share: 0 },
-  { population: 1, cumulative_share: 1 },
+  { x: 0, y: 0 },
+  { x: 1, y: 1 },
 ]
 
 export function LorenzChart({ data }) {
@@ -15,7 +16,7 @@ export function LorenzChart({ data }) {
       <LineChart margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
         <XAxis
-          dataKey="population"
+          dataKey="x"
           type="number"
           domain={[0, 1]}
           tickFormatter={v => `${Math.round(v * 100)}%`}
@@ -23,16 +24,15 @@ export function LorenzChart({ data }) {
           tick={{ fontSize: 11, fill: '#94A3B8' }}
         />
         <YAxis
-          dataKey="cumulative_share"
+          dataKey="y"
           type="number"
           domain={[0, 1]}
-          tickFormatter={v => `${Math.round(v * 100)}%`
-          }
+          tickFormatter={v => `${Math.round(v * 100)}%`}
           label={{ value: 'Доля субсидий', angle: -90, position: 'insideLeft', offset: 10, fontSize: 12, fill: '#64748B' }}
           tick={{ fontSize: 11, fill: '#94A3B8' }}
         />
         <Tooltip
-          formatter={(value) => [`${(value * 100).toFixed(2)}%`]}
+          formatter={(value, name) => [`${(value * 100).toFixed(2)}%`, name]}
           labelFormatter={(v) => `Производители: ${(v * 100).toFixed(2)}%`}
         />
         <Legend
@@ -41,7 +41,7 @@ export function LorenzChart({ data }) {
         />
         <Line
           data={data}
-          dataKey="cumulative_share"
+          dataKey="y"
           name="Реальное распределение"
           stroke="#2563EB"
           strokeWidth={2}
@@ -50,7 +50,7 @@ export function LorenzChart({ data }) {
         />
         <Line
           data={EQUALITY_LINE}
-          dataKey="cumulative_share"
+          dataKey="y"
           name="Идеальное равенство"
           stroke="#94A3B8"
           strokeWidth={1.5}

@@ -41,6 +41,15 @@ export default function SimulatorPage() {
         const ratio = weights[s.key] / othersTotal
         newWeights[s.key] = Math.max(0, Math.round(weights[s.key] - delta * ratio))
       })
+      // Correction pass: ensure sum is exactly 100 (rounding can drift)
+      const currentTotal = Object.values(newWeights).reduce((s, v) => s + v, 0)
+      const diff = 100 - currentTotal
+      if (diff !== 0) {
+        const adjustKey = others
+          .filter(s => newWeights[s.key] + diff >= 0)
+          .sort((a, b) => newWeights[b.key] - newWeights[a.key])[0]?.key
+        if (adjustKey) newWeights[adjustKey] = Math.max(0, newWeights[adjustKey] + diff)
+      }
     }
     setWeights(newWeights)
   }
@@ -96,6 +105,7 @@ export default function SimulatorPage() {
                 <p className="text-[10px] text-slate-400 mb-1.5 leading-snug">{s.description}</p>
                 <input
                   type="range" min={0} max={100} value={weights[s.key]}
+                  onInput={e => handleChange(s.key, parseInt(e.target.value))}
                   onChange={e => handleChange(s.key, parseInt(e.target.value))}
                   className="w-full h-1 rounded-full cursor-pointer"
                   style={{ accentColor: SLIDER_COLORS[idx] }}
@@ -182,13 +192,15 @@ export default function SimulatorPage() {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 12 }}
                         transition={{ duration: 0.18 }}
-                        className={`px-5 py-3 flex items-center gap-3 transition-colors ${
+                        className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
                           isEntered
-                            ? 'border-l-2 border-green-500 bg-green-50/60'
-                            : 'border-l-2 border-transparent hover:bg-slate-50'
+                            ? 'border-l-4 border-green-500 bg-green-50'
+                            : idx % 2 === 0
+                              ? 'border-l-4 border-transparent bg-white hover:bg-slate-50'
+                              : 'border-l-4 border-transparent bg-slate-50/60 hover:bg-slate-100/60'
                         }`}
                       >
-                        <span className="text-xs text-slate-300 w-5 tabular-nums text-right">{idx + 1}</span>
+                        <span className="text-xs font-bold text-slate-400 w-6 tabular-nums text-right">{idx + 1}</span>
                         <span className="font-mono text-xs text-slate-700 font-semibold w-24">{p.producer_id}</span>
                         <span className="text-xs text-slate-400 flex-1 truncate">{p.region}{p.direction ? ` · ${p.direction}` : ''}</span>
                         {p.hidden_talent && <Badge variant="hidden_talent" />}
@@ -211,7 +223,7 @@ export default function SimulatorPage() {
                   key={`left-${p.producer_id}`}
                   initial={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="px-5 py-3 flex items-center gap-3 border-l-2 border-red-400 bg-red-50/50"
+                  className="px-5 py-3 flex items-center gap-3 border-l-4 border-red-300 bg-red-50 opacity-70"
                 >
                   <span className="text-xs text-slate-300 w-5">—</span>
                   <span className="font-mono text-xs text-slate-400 w-24 line-through">{p.producer_id}</span>

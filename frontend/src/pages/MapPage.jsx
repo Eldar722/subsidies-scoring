@@ -5,16 +5,30 @@ import { useFairness } from '../hooks/useFairness'
 import { Badge } from '../components/ui/Badge'
 import { Skeleton } from '../components/ui/Skeleton'
 import { CardHeader } from '../components/ui/Card'
+import { ErrorState } from '../components/ui/ErrorState'
 import { X, Warning } from '@phosphor-icons/react'
 import 'leaflet/dist/leaflet.css'
 
-function getColor(score) {
-  if (score >= 0.8) return '#15803D'
-  if (score >= 0.6) return '#22C55E'
-  if (score >= 0.4) return '#86EFAC'
-  if (score >= 0.2) return '#BBF7D0'
-  return '#F0FDF4'
+// Color scale: no-data → red → yellow → light-green → dark-green
+function getColor(score, hasData) {
+  if (!hasData) return '#CBD5E1'  // gray for regions with no data
+  if (score >= 0.75) return '#15803D'  // dark green — excellent
+  if (score >= 0.65) return '#22C55E'  // green — good
+  if (score >= 0.55) return '#86EFAC'  // light green — above average
+  if (score >= 0.45) return '#FDE68A'  // yellow — average
+  if (score >= 0.35) return '#FCA5A5'  // light red — below average
+  return '#EF4444'                      // red — poor
 }
+
+const LEGEND_ITEMS = [
+  ['#15803D', '≥75%'],
+  ['#22C55E', '≥65%'],
+  ['#86EFAC', '≥55%'],
+  ['#FDE68A', '≥45%'],
+  ['#FCA5A5', '≥35%'],
+  ['#EF4444', '<35%'],
+  ['#CBD5E1', 'Нет данных'],
+]
 
 function StatMini({ label, value, color = 'text-slate-800' }) {
   return (
@@ -29,10 +43,10 @@ function RegionSidePanel({ region, onClose }) {
   if (!region) return null
   const isOutlier = Math.abs(region.z_score || 0) > 1
   return (
-    <div className="absolute right-0 top-0 h-full w-72 bg-white border-l border-slate-100 shadow-xl z-[1000] flex flex-col">
+    <div className="fixed right-0 top-0 h-screen w-80 bg-white border-l border-slate-200 shadow-xl z-[1000] flex flex-col">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <div>
-          <h3 className="font-semibold text-slate-900 text-sm leading-snug">{region.name}</h3>
+          <h3 className="font-semibold text-slate-900 text-sm leading-snug">{region.region || region.name}</h3>
           {isOutlier && <p className="text-[10px] text-amber-600 font-medium mt-0.5">⚠ Значимое отклонение</p>}
         </div>
         <button
@@ -86,8 +100,27 @@ function RegionSidePanel({ region, onClose }) {
   )
 }
 
+// Maps backend "Область" column values → GeoJSON feature.properties.name
+const REGION_TO_GEO = {
+  'Акмолинская область':           'Акмолинская',
+  'Актюбинская область':           'Актобе',
+  'Алматинская область':           'Алматинская',
+  'Атырауская область':            'Атырауская',
+  'Восточно-Казахстанская область':'Восточно-Казахстанская',
+  'Жамбылская область':            'Жамбылская',
+  'Западно-Казахстанская область': 'Западно-Казахстанская',
+  'Карагандинская область':        'Карагандинская',
+  'Костанайская область':          'Костанайская',
+  'Кызылординская область':        'Кызылординская',
+  'Мангистауская область':         'Мангистауская',
+  'Павлодарская область':          'Павлодарская',
+  'Северо-Казахстанская область':  'Северо-Казахстанская',
+  'Туркестанская область':         'Туркестанская',
+  'г.Шымкент':                    'Шымкент',
+}
+
 export default function MapPage() {
-  const { data: mapRegions, isLoading } = useMapRegions()
+  const { data: mapRegions, isLoading, isError, refetch } = useMapRegions()
   const { data: fairness } = useFairness()
   const [geoData, setGeoData]             = useState(null)
   const [selectedRegion, setSelectedRegion] = useState(null)
@@ -97,16 +130,25 @@ export default function MapPage() {
   }, [])
 
   const regionMap = {}
-  if (mapRegions) mapRegions.forEach(r => { regionMap[r.name] = r })
-  const fairnessRegions = fairness?.regions || []
+  if (mapRegions) mapRegions.forEach(r => {
+    const geoName = REGION_TO_GEO[r.region] || r.region
+    regionMap[geoName] = { ...r, _backendName: r.region }
+  })
+  const fairnessRegions = fairness?.regional_stats || []
   fairnessRegions.forEach(r => {
-    const k = r['Область']
-    if (!regionMap[k]) regionMap[k] = { name: k, avg_ml_score: r.avg_ml_score || 0.65, producers_count: r.total_apps, hidden_talents_count: 0, z_score: 0 }
+    const geoName = REGION_TO_GEO[r.region] || r.region
+    if (!regionMap[geoName]) regionMap[geoName] = { region: geoName, avg_ml_score: r.avg_ml_score || 0.65, producer_count: r.total_apps, hidden_talent_count: 0, z_score: 0 }
   })
 
   const styleFeature = (feature) => {
     const r = regionMap[feature.properties.name]
-    return { fillColor: getColor(r?.avg_ml_score ?? 0), fillOpacity: 0.75, color: '#CBD5E1', weight: 1 }
+    const hasData = r !== undefined && r.avg_ml_score !== undefined
+    return {
+      fillColor: getColor(r?.avg_ml_score ?? 0, hasData),
+      fillOpacity: 0.82,
+      color: '#94A3B8',
+      weight: 1.5,
+    }
   }
 
   const onEachFeature = (feature, layer) => {
@@ -125,14 +167,23 @@ export default function MapPage() {
     layer.on({
       mouseover(e) { e.target.setStyle({ fillOpacity: 0.92, weight: 2, color: '#2563EB' }) },
       mouseout(e)  { e.target.setStyle(styleFeature(feature)) },
-      click()      { setSelectedRegion(r ? { ...r, name } : { name }) },
+      click()      { setSelectedRegion(r ? { ...r, name: r.region || name } : { name, region: name }) },
     })
   }
 
-  const tableRegions = fairness?.regions || []
+  const tableRegions = fairness?.regional_stats || []
+
+  if (isError) {
+    return (
+      <div className="space-y-5">
+        <ErrorState message="Не удалось загрузить данные карты. Проверьте подключение к серверу." onRetry={() => refetch()} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5 max-w-full">
+      {selectedRegion && <RegionSidePanel region={selectedRegion} onClose={() => setSelectedRegion(null)} />}
       {/* Map card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <CardHeader
@@ -160,16 +211,15 @@ export default function MapPage() {
               />
             </MapContainer>
           )}
-          {selectedRegion && <RegionSidePanel region={selectedRegion} onClose={() => setSelectedRegion(null)} />}
         </div>
 
         {/* Legend */}
-        <div className="px-5 py-3 border-t border-slate-100 flex items-center gap-5 flex-wrap bg-slate-50/50">
-          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">ML Score:</span>
-          <div className="flex items-center gap-3 flex-wrap">
-            {[['#15803D','≥80%'],['#22C55E','≥60%'],['#86EFAC','≥40%'],['#BBF7D0','≥20%'],['#F0FDF4','<20%']].map(([color, label]) => (
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center gap-4 flex-wrap bg-slate-50/50">
+          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Средний ML Score:</span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {LEGEND_ITEMS.map(([color, label]) => (
               <div key={label} className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm border border-slate-200" style={{ backgroundColor: color }} />
+                <div className="w-3.5 h-3.5 rounded border border-slate-300" style={{ backgroundColor: color }} />
                 <span className="text-xs text-slate-500">{label}</span>
               </div>
             ))}
@@ -200,13 +250,14 @@ export default function MapPage() {
                     </tr>
                   ))
                 : tableRegions.slice().sort((a, b) => b.total_apps - a.total_apps).map(region => {
-                    const name  = region['Область']
-                    const mapR  = regionMap[name]
-                    const isOut = mapR && Math.abs(mapR.z_score || 0) > 1
+                    const name    = region.region || region['Область']
+                    const geoName = REGION_TO_GEO[name] || name
+                    const mapR    = regionMap[geoName]
+                    const isOut   = mapR && Math.abs(mapR.z_score || 0) > 1
                     return (
                       <tr
                         key={name}
-                        onClick={() => mapR && setSelectedRegion({ ...mapR, name })}
+                        onClick={() => mapR && setSelectedRegion({ ...mapR, name: name })}
                         className="hover:bg-slate-50 transition-colors cursor-pointer"
                       >
                         <td className="px-4 py-3.5 text-slate-700 text-sm font-medium">
@@ -223,9 +274,9 @@ export default function MapPage() {
                           {region.avg_amount ? region.avg_amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) : '—'}
                         </td>
                         <td className="px-4 py-3.5">
-                          {region.avg_ml_score !== undefined && (
-                            <Badge variant={region.avg_ml_score >= 0.7 ? 'success' : region.avg_ml_score >= 0.55 ? 'warning' : 'error'}>
-                              {(region.avg_ml_score * 100).toFixed(1)}%
+                          {(mapR?.avg_ml_score ?? region.avg_ml_score) !== undefined && (
+                            <Badge variant={(mapR?.avg_ml_score ?? region.avg_ml_score) >= 0.7 ? 'success' : (mapR?.avg_ml_score ?? region.avg_ml_score) >= 0.55 ? 'warning' : 'error'}>
+                              {((mapR?.avg_ml_score ?? region.avg_ml_score) * 100).toFixed(1)}%
                             </Badge>
                           )}
                         </td>

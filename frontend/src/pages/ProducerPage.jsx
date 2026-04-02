@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Sparkle, Lightbulb, FileText, CheckCircle, TreeStructure, CalendarBlank } from '@phosphor-icons/react'
-import { getProducerDetail, getProducerAdvice } from '../services/api'
+import { ArrowLeft, Sparkle, FileText, CheckCircle, TreeStructure, CalendarBlank, Warning, ArrowRight, Gauge, GitFork } from '@phosphor-icons/react'
+import { getProducerDetail, getProducerAdvice, getProducerConfidence, getCounterfactual } from '../services/api'
 import { Badge } from '../components/ui/Badge'
 import { Skeleton } from '../components/ui/Skeleton'
 import { CardHeader } from '../components/ui/Card'
@@ -52,10 +52,27 @@ export default function ProducerPage() {
     enabled: !!id,
   })
 
-  const { data: advice, isLoading: adviceLoading } = useQuery({
+  const { data: confidence } = useQuery({
+    queryKey: ['confidence', id],
+    queryFn: () => getProducerConfidence(id),
+    enabled: !!id,
+    staleTime: 300_000,
+  })
+
+  const { data: counterfactual } = useQuery({
+    queryKey: ['counterfactual', id],
+    queryFn: () => getCounterfactual(id),
+    enabled: !!id,
+    staleTime: 300_000,
+    retry: 1,
+  })
+
+  const { data: advice, isLoading: adviceLoading, isError: adviceError, refetch: refetchAdvice } = useQuery({
     queryKey: ['advice', id],
     queryFn: () => getProducerAdvice(id),
     enabled: !!id,
+    retry: 2,
+    staleTime: 300_000,
   })
 
   if (isLoading) {
@@ -124,6 +141,26 @@ export default function ProducerPage() {
         </div>
       </div>
 
+      {/* Drift Confidence Banner */}
+      {confidence && confidence.is_low_confidence && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <Gauge size={15} className="text-amber-500 flex-shrink-0 mt-0.5" weight="fill" />
+          <div>
+            <p className="text-xs font-semibold text-amber-800">
+              Низкая уверенность модели — {(confidence.confidence_score * 100).toFixed(0)}%
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">{confidence.explanation}</p>
+            {confidence.anomalous_features?.length > 0 && (
+              <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                {confidence.anomalous_features.map(f => (
+                  <span key={f} className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">{f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {STAT_CONFIG.map((cfg) => {
@@ -153,18 +190,28 @@ export default function ProducerPage() {
             </div>
           </div>
 
-          {(advice || adviceLoading) && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-2.5">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
                 <Sparkle size={13} className="text-blue-600" weight="fill" />
                 <span className="text-blue-700 font-semibold text-xs tracking-wide">Gemini AI — объяснение балла</span>
               </div>
-              {adviceLoading
-                ? <Skeleton className="h-12 w-full" />
-                : <p className="text-sm text-slate-700 leading-relaxed">{advice?.score_explanation}</p>
-              }
+              {adviceError && (
+                <button
+                  onClick={() => refetchAdvice()}
+                  className="text-[10px] font-medium text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md hover:bg-blue-100 transition-colors"
+                >
+                  Повторить
+                </button>
+              )}
             </div>
-          )}
+            {adviceLoading
+              ? <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-4/5" /></div>
+              : adviceError
+                ? <p className="text-sm text-blue-600 leading-relaxed opacity-70">Не удалось получить объяснение от Gemini AI. Проверьте соединение и попробуйте снова.</p>
+                : <p className="text-sm text-slate-700 leading-relaxed">{advice?.score_explanation}</p>
+            }
+          </div>
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <CardHeader title="История заявок" subtitle="Активность по месяцам" />
@@ -212,29 +259,96 @@ export default function ProducerPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <CardHeader title="Что улучшить" subtitle="Рекомендации по росту балла" />
-            <div className="p-5">
-              {adviceLoading ? (
-                <div className="space-y-2.5">
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
+          {/* Counterfactual Explanations */}
+          {counterfactual && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader
+                title="Контрфактуальный анализ"
+                subtitle={`Минимальные изменения для прохода порога ${(counterfactual.threshold * 100).toFixed(1)}%`}
+              />
+              <div className="p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1 bg-slate-100 rounded-lg p-2.5 text-center">
+                    <div className="text-[10px] text-slate-400 font-medium mb-1">Сейчас</div>
+                    <div className="text-base font-bold text-red-600">{(counterfactual.current_score * 100).toFixed(1)}%</div>
+                  </div>
+                  <ArrowRight size={14} className="text-slate-300 flex-shrink-0" />
+                  <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-2.5 text-center">
+                    <div className="text-[10px] text-green-600 font-medium mb-1">Цель</div>
+                    <div className="text-base font-bold text-green-700">{(counterfactual.target_score * 100).toFixed(1)}%</div>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {(advice?.recommendations || []).map((rec, i) => (
-                    <div key={i} className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <div className="flex items-start gap-2">
-                        <Lightbulb size={13} className="text-amber-500 mt-0.5 flex-shrink-0" weight="fill" />
-                        <div className="flex-1">
-                          <p className="text-xs text-slate-700 leading-relaxed">{rec.text}</p>
-                          <ImpactBadge impact={rec.impact} />
+                <div className="space-y-2.5">
+                  {(counterfactual.changes || []).map((ch, i) => (
+                    <div key={i} className="rounded-xl border border-slate-100 overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50">
+                        <GitFork size={11} className="text-slate-400" weight="fill" />
+                        <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">{ch.feature}</span>
+                        <span className="ml-auto text-[10px] font-bold text-green-600">+{ch.impact_pct}%</span>
+                      </div>
+                      <div className="px-3 py-2 space-y-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-slate-400 w-20 flex-shrink-0">Сейчас:</span>
+                          <span className="font-medium text-red-600 line-through">{ch.current}</span>
+                          <ArrowRight size={10} className="text-slate-300" />
+                          <span className="font-semibold text-green-700">{ch.recommended}</span>
                         </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">{ch.explanation}</p>
                       </div>
                     </div>
                   ))}
+                </div>
+                {!counterfactual.achievable && (
+                  <p className="text-xs text-slate-400 text-center mt-3">Достижение порога через управляемые признаки недоступно</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader title="Что улучшить" subtitle="Конкретные шаги для роста ML-балла" />
+            <div className="p-5">
+              {adviceLoading ? (
+                <div className="space-y-2.5">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(advice?.recommendations || []).map((rec, i) => {
+                    // Support both structured {problem,cause,action} and legacy {text} formats
+                    const hasPCA = rec.problem && rec.cause && rec.action
+                    return (
+                      <div key={i} className="rounded-xl border overflow-hidden" style={{ borderColor: '#FCD34D' }}>
+                        {/* Header: problem */}
+                        <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2" style={{ background: '#FFFBEB' }}>
+                          <Warning size={13} className="text-amber-500 mt-0.5 flex-shrink-0" weight="fill" />
+                          <p className="text-xs font-semibold text-amber-800 leading-snug flex-1">
+                            {hasPCA ? rec.problem : rec.text}
+                          </p>
+                          <ImpactBadge impact={rec.impact} />
+                        </div>
+                        {hasPCA && (
+                          <div className="px-3.5 pb-3 pt-1 space-y-1.5" style={{ background: '#FFFBEB' }}>
+                            {/* Cause */}
+                            <div className="flex items-start gap-2">
+                              <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider mt-0.5 w-14 flex-shrink-0">Причина</span>
+                              <p className="text-xs text-slate-600 leading-relaxed">{rec.cause}</p>
+                            </div>
+                            {/* Action */}
+                            <div className="flex items-start gap-2 pt-1 border-t border-amber-100">
+                              <span className="text-[9px] font-bold text-green-600 uppercase tracking-wider mt-0.5 w-14 flex-shrink-0 flex items-center gap-0.5">
+                                <ArrowRight size={9} weight="bold" />Действие
+                              </span>
+                              <p className="text-xs font-medium text-slate-700 leading-relaxed">{rec.action}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                   {(!advice?.recommendations || advice.recommendations.length === 0) && (
-                    <p className="text-xs text-slate-400 text-center py-4">Рекомендации загружаются...</p>
+                    <p className="text-xs text-slate-400 text-center py-4">Нет рекомендаций</p>
                   )}
                 </div>
               )}

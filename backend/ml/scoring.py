@@ -36,15 +36,23 @@ def score_dataframe(df_slice):
     encoders = state.MODEL_DATA["encoders"]
     threshold = state.MODEL_DATA.get("optimal_threshold", 0.5)
 
-    train_ref = state.DF[(state.DF["year"] == 2025) & state.DF["target"].notna()].copy()
-    train_ref["target"] = train_ref["target"].astype(int)
-
     df = df_slice.copy()
 
-    df = _enrich_with_group_stats(df, train_ref, "Область", "reg")
-    df = _enrich_with_group_stats(df, train_ref, "Направление водства", "dir")
-    df = _enrich_with_group_stats(df, train_ref, "Наименование субсидирования", "sub")
-    df = _enrich_with_group_stats(df, train_ref, "Район хозяйства", "dist")
+    if state.GROUP_STATS:
+        # Fast path: use precomputed group stats (computed once at startup).
+        # Eliminates 4× groupby+merge on 32K train rows per request.
+        for prefix, (group_col, stats, fill_vals) in state.GROUP_STATS.items():
+            df = df.merge(stats, on=group_col, how="left")
+            for col, fill_val in fill_vals.items():
+                df[col] = df[col].fillna(fill_val)
+    else:
+        # Slow fallback: compute group stats from scratch (used before startup completes)
+        train_ref = state.DF[(state.DF["year"] == 2025) & state.DF["target"].notna()].copy()
+        train_ref["target"] = train_ref["target"].astype(int)
+        df = _enrich_with_group_stats(df, train_ref, "Область", "reg")
+        df = _enrich_with_group_stats(df, train_ref, "Направление водства", "dir")
+        df = _enrich_with_group_stats(df, train_ref, "Наименование субсидирования", "sub")
+        df = _enrich_with_group_stats(df, train_ref, "Район хозяйства", "dist")
 
     df["region_enc"]    = safe_transform(encoders["region"],    df["Область"].fillna("unk"))
     df["direction_enc"] = safe_transform(encoders["direction"], df["Направление водства"].fillna("unk"))

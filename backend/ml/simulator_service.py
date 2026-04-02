@@ -8,6 +8,12 @@ import pandas as pd
 from ml.scoring import score_dataframe
 import core.state as state
 
+try:
+    from cachetools import TTLCache
+    _ml_scores_cache = TTLCache(maxsize=1, ttl=300)  # ML scores per producer — static between pipeline runs
+except ImportError:
+    _ml_scores_cache = {}
+
 DEFAULT_WEIGHTS = {
     "completion_rate": 0.35,
     "approval_rate": 0.25,
@@ -92,9 +98,14 @@ def simulate(weights: dict, top_n: int = 20, baseline_top_n: int = 20) -> dict:
         if col in producers.columns
     )
 
-    # ML baseline для сравнения
-    scored = score_dataframe(state.DF)
-    ml_scores = scored.groupby("producer_id")["ml_score"].mean().reset_index()
+    # ML baseline для сравнения — кэшируем, т.к. не зависит от весов
+    cache_key = "ml_scores"
+    if cache_key in _ml_scores_cache:
+        ml_scores = _ml_scores_cache[cache_key]
+    else:
+        scored = score_dataframe(state.DF)
+        ml_scores = scored.groupby("producer_id")["ml_score"].mean().reset_index()
+        _ml_scores_cache[cache_key] = ml_scores
     producers = producers.merge(ml_scores, on="producer_id", how="left")
     producers["ml_score"] = producers["ml_score"].fillna(0)
 
@@ -115,19 +126,25 @@ def simulate(weights: dict, top_n: int = 20, baseline_top_n: int = 20) -> dict:
     new_top = producers.nlargest(top_n, "weighted_score")
     new_ids = set(new_top["producer_id"])
 
-    entered = sorted(new_ids - baseline_ids)
-    left = sorted(baseline_ids - new_ids)
+    entered_ids = new_ids - baseline_ids
+    left_ids = baseline_ids - new_ids
 
-    shortlist = new_top[[
+    output_cols = [c for c in [
         "producer_id", "weighted_score", "ml_score",
         "region", "direction", "hidden_talent",
         "completion_rate", "approval_rate",
-    ]].round(4).to_dict(orient="records")
+    ] if c in producers.columns]
+
+    shortlist = new_top[output_cols].round(4).to_dict(orient="records")
+
+    # Return full objects (not just IDs) so frontend can display them
+    entered_objs = producers[producers["producer_id"].isin(entered_ids)][output_cols].round(4).to_dict(orient="records")
+    left_objs = producers[producers["producer_id"].isin(left_ids)][output_cols].round(4).to_dict(orient="records")
 
     return {
         "shortlist": shortlist,
-        "entered": entered,
-        "left": left,
+        "entered": entered_objs,
+        "left": left_objs,
         "hidden_talent_count": int(new_top["hidden_talent"].sum()),
         "weights_used": {k: round(v, 4) for k, v in weights.items()},
     }
