@@ -1,61 +1,108 @@
-# Python
+# ===== SECRETS & ENVIRONMENT =====
+.env
+.env.local
+.env.*.local
+**/.env
+backend/.env
+frontend/.env.local
+
+# ===== PYTHON =====
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+env/
 venv/
-.env
-**/.env
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ML/Data artifacts (models, data caches)
 backend/model.pkl
-
-# Node
-frontend/node_modules/
-frontend/dist/
-frontend/.env.local
-
-# Data — реальные данные не в git
+backend/*.pkl
+backend/*.joblib
+backend/data/*.parquet
 backend/data/*.xlsx
 backend/data/*.csv
+backend/logs/
 
-# IDE
+# ===== NODE / NPM / FRONTEND =====
+frontend/node_modules/
+frontend/dist/
+frontend/.dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.staging.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.turbo
+
+# ===== IDE & EDITORS =====
 .vscode/
 .idea/
 .DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+.sublime-project
+.sublime-workspace
 
-# Claude / Internal instructions
+# ===== INTERNAL DOCUMENTATION =====
+# Claude AI planning files (not for git)
 CLAUDE.md
 .claude/
 PROMPT_SCAFFOLDING.md
-PLAN_BACKEND.md
-PLAN_P3_DEVOPS.md
+PLAN_*.md
 backend/CLAUDE.md
-backend/PLAN_ML.md
+backend/PLAN_*.md
 frontend/FRONTEND_PLAN.md
 
-# Docs
-*.docx
-*.doc
-
-# Logs
+# ===== SYSTEM & TEMPORARY =====
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Next.js / React
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/coverage/
-frontend/.env*
-
-# Python / Environment
-.pytest_cache/
-htmlcov/
-.coverage
+*.logs
+.DS_Store
+Thumbs.db
+desktop.ini
 *.sqlite3
-.pytest_cache/
+*.db
 
-# Misc
+# ===== VERCEL DEPLOYMENT =====
 .vercel/
-*.pem
+.vercel
+
+# ===== BUILD OUTPUT & CACHES =====
+dist/
+out/
+.next/
+build/
+*.swp
+*.swo
