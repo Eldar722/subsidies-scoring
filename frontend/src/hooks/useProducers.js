@@ -5,6 +5,7 @@ export function useProducers(params = {}) {
   return useQuery({
     queryKey: ['producers', params],
     queryFn: () => getProducers(params),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    gcTime: 60_000,
   })
 }

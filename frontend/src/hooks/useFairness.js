@@ -5,6 +5,7 @@ export function useFairness() {
   return useQuery({
     queryKey: ['fairness'],
     queryFn: getFairness,
-    staleTime: 60_000,
+    staleTime: 5_000,
+    gcTime: 60_000,
   })
 }

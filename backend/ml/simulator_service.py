@@ -6,6 +6,7 @@ simulator_service.py — симулятор весов для шортлиста
 import numpy as np
 import pandas as pd
 from ml.scoring import score_dataframe
+from ml.hidden_talent_detector import detect_hidden_talents_by_delta
 import core.state as state
 
 try:
@@ -109,12 +110,14 @@ def simulate(weights: dict, top_n: int = 20, baseline_top_n: int = 20) -> dict:
     producers = producers.merge(ml_scores, on="producer_id", how="left")
     producers["ml_score"] = producers["ml_score"].fillna(0)
 
-    # Hidden talent
-    score_med = producers["ml_score"].median()
-    apps_med = producers["total_apps"].median()
-    producers["hidden_talent"] = (
-        (producers["ml_score"] > score_med) &
-        (producers["total_apps"] < apps_med)
+    # Calculate delta (difference between ML score and weighted score)
+    producers["delta"] = (producers["ml_score"] - producers["weighted_score"]) * 100
+
+    # Hidden talent detection using centralized detector
+    producers["hidden_talent"] = detect_hidden_talents_by_delta(
+        producers, 
+        delta_threshold=10,  # ML score must be >10% higher than weighted score
+        score_multiplier=1.0
     )
 
     # Базовый шортлист (по ml_score)

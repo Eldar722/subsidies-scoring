@@ -181,7 +181,7 @@ function DriftBanner() {
 
 // ── Model Metrics strip ──
 function MetricsStrip() {
-  const { data: metrics } = useQuery({ queryKey: ['metrics'], queryFn: getMetrics, staleTime: 60_000 })
+  const { data: metrics, refetch } = useQuery({ queryKey: ['metrics'], queryFn: getMetrics, staleTime: 5_000, gcTime: 60_000 })
   if (!metrics) return null
 
   const fcfs = metrics.vs_fcfs

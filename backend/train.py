@@ -294,6 +294,16 @@ def main():
     print(f"\n✅ Модель сохранена → model.pkl")
     print(f"   Порог: {best_thr:.3f} | AUC: {auc:.4f} | F1: {best_f1:.4f}")
     print(f"   CV AUC: {np.mean(cv_aucs):.4f} ± {np.std(cv_aucs):.4f}")
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sync scores to Supabase for frontend
+    # ══════════════════════════════════════════════════════════════════════════
+    try:
+        from ml.sync_to_supabase import sync_scores_to_supabase
+        sync_scores_to_supabase(df_test, artifact)
+    except Exception as e:
+        print(f"\n⚠️ WARNING: Failed to sync to Supabase: {e}")
+        print("  (Frontend may show stale data, but model training succeeded)")
 
 
 if __name__ == "__main__":

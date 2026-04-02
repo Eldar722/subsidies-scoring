@@ -5,6 +5,7 @@ baseline_service.py — FCFS baseline, delta, hidden talent.
 
 import pandas as pd
 import numpy as np
+from ml.hidden_talent_detector import detect_hidden_talents_by_delta
 
 
 def compute_baseline(df, model_scores: dict):
@@ -41,18 +42,12 @@ def compute_baseline(df, model_scores: dict):
 
     # Delta = fcfs_rank - ml_rank
     # Положительная delta → ML считает лучше чем FCFS
+    # Delta = ML rank - FCFS rank (положительное значение = ML считает выше FCFS)
     result["delta"] = result["fcfs_rank"] - result["ml_rank"]
 
-    # Hidden talent: высокий ml_score + мало заявок
-    apps_count = df.groupby("producer_id").size().reset_index(name="total_apps")
-    result = result.merge(apps_count, on="producer_id", how="left")
-
-    score_median = result["ml_score"].median()
-    apps_median = result["total_apps"].median()
-    result["hidden_talent"] = (
-        (result["ml_score"] > score_median) &
-        (result["total_apps"] < apps_median)
-    )
+    # Hidden talent: используем centralized логика (delta-based)
+    # Скрытый телант = (delta > 10) AND (ml_score > threshold)
+    result["hidden_talent"] = detect_hidden_talents_by_delta(result, delta_threshold=10)
 
     return result[[
         "producer_id", "ml_score", "ml_rank", "fcfs_rank",

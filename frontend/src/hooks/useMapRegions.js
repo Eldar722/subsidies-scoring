@@ -5,6 +5,7 @@ export function useMapRegions() {
   return useQuery({
     queryKey: ['mapRegions'],
     queryFn: getMapRegions,
-    staleTime: 60_000,
+    staleTime: 10_000,
+    gcTime: 300_000,  // Keep in cache for 5 min since geo data is static
   })
 }

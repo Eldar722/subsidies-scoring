@@ -47,6 +47,7 @@ function Delta({ value, suffix = '' }) {
 // ── Subsidy Effectiveness Tab ──
 function EffectivenessTab() {
   const navigate = useNavigate()
+  const [activeMetric, setActiveMetric] = useState('completion_2025')
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['subsidy-effectiveness'],
     queryFn: getSubsidyEffectiveness,
@@ -67,117 +68,224 @@ function EffectivenessTab() {
 
   if (!data) return <p className="text-slate-400 text-sm py-8 text-center">Нет данных</p>
 
-  const producers = data.producers || []
-  const improved = producers.filter(p => p.improved)
-  const needsReview = producers.filter(p => p.needs_review)
-
-  // Гистограмма топ-20 по effectiveness score
-  const chartData = producers.slice(0, 20).map(p => ({
-    id: p.producer_id,
-    score: p.effectiveness_score,
-    improved: p.improved,
-  }))
+  // Новая структура с тремя метриками
+  const metrics = data.metrics || {}
+  const current = metrics[activeMetric] || {}
 
   return (
     <div className="space-y-5 animate-fade-in">
-      {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Проанализировано', value: data.total_analyzed, color: 'text-slate-900', bg: 'bg-slate-100', icon: Equals },
-          { label: 'Улучшились', value: data.improved_count, color: 'text-green-600', bg: 'bg-green-100', icon: TrendUp },
-          { label: 'На проверку', value: data.needs_review_count, color: 'text-amber-600', bg: 'bg-amber-100', icon: Warning },
-          { label: 'Ср. эффективность', value: data.avg_effectiveness_score + '%', color: 'text-blue-600', bg: 'bg-blue-100', icon: CheckCircle },
-        ].map(({ label, value, color, bg, icon: Icon }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-start justify-between mb-3">
-              <p className="text-xs text-slate-500 font-medium">{label}</p>
-              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
-                <Icon size={15} className={color} weight="bold" />
-              </div>
-            </div>
-            <div className={`text-2xl font-bold ${color}`}>{value ?? '—'}</div>
-          </div>
+      {/* Metric Tabs */}
+      <div className="flex gap-2 border-b border-slate-200">
+        {data.tabs?.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveMetric(tab.id)}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeMetric === tab.id
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-slate-600 hover:text-slate-700'
+            }`}
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
 
-      {/* Bar chart effectiveness scores */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <CardHeader title="Топ-20 производителей по индексу эффективности" subtitle="Сравнение показателей 2025 → 2026 после получения субсидии" />
-        <div className="p-5" style={{ height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 20 }}>
-              <XAxis dataKey="id" tick={{ fontSize: 9, fill: '#94a3b8' }} angle={-30} textAnchor="end" interval={0} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null
-                  const d = payload[0].payload
-                  return (
-                    <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow text-xs">
-                      <p className="font-mono font-semibold text-slate-800">{d.id}</p>
-                      <p className="text-slate-500 mt-0.5">Индекс: <span className="font-bold text-blue-600">{d.score}%</span></p>
-                    </div>
-                  )
-                }}
-              />
-              <Bar dataKey="score" radius={[4, 4, 0, 0]} maxBarSize={24}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={entry.improved ? '#16a34a' : '#dc2626'} fillOpacity={0.82} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      {/* 2025 Completion Tab */}
+      {activeMetric === 'completion_2025' && current.metric && (
+        <div className="space-y-5">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Всего заявок', value: current.total_applications, icon: Equals, color: 'text-slate-900', bg: 'bg-slate-100' },
+              { label: 'Исполнено', value: current.completed, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
+              { label: 'Отклонено', value: current.rejected, icon: XCircle, color: 'text-red-600', bg: 'bg-red-100' },
+              { label: '% Исполнения', value: (current.completion_rate * 100).toFixed(1) + '%', icon: TrendUp, color: 'text-blue-600', bg: 'bg-blue-100' },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-xs text-slate-500 font-medium">{label}</p>
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
+                    <Icon size={15} className={color} weight="bold" />
+                  </div>
+                </div>
+                <div className={`text-2xl font-bold ${color}`}>{value ?? '—'}</div>
+              </div>
+            ))}
+          </div>
 
-      {/* Producers table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <CardHeader title="Детальный анализ" subtitle="Сравнение поведения до / после получения субсидии" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                {['Производитель', 'Регион', 'Индекс', 'Δ Исполнение', 'Δ Сумма', 'Δ Активность', 'Статус'].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {producers.slice(0, 30).map((p, i) => (
-                <tr key={i} className="hover:bg-slate-50 transition-colors">
-                  <td
-                    className="px-4 py-3 font-mono text-slate-700 font-semibold cursor-pointer hover:text-blue-600 transition-colors"
-                    onClick={() => navigate(`/producer/${p.producer_id}`)}
-                  >
-                    {p.producer_id}
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 max-w-[120px] truncate">{p.region || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`font-bold ${p.effectiveness_score >= 60 ? 'text-green-600' : p.effectiveness_score >= 40 ? 'text-amber-600' : 'text-red-500'}`}>
-                      {p.effectiveness_score}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Delta value={p.deltas?.completion_rate ? p.deltas.completion_rate * 100 : null} suffix="%" />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Delta value={p.deltas?.avg_amount} suffix=" ₸" />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Delta value={p.deltas?.activity} suffix=" зяв/мес" />
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.improved
-                      ? <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">↑ Улучшился</span>
-                      : <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">⚠ На проверку</span>
-                    }
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* By Region Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader title="Статистика по регионам" subtitle="Распределение исполненных субсидий в 2025" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    {['Регион', 'Всего заявок', 'Исполнено', '% Исполнения'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {current.by_region?.slice(0, 15).map((r, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-700">{r.region}</td>
+                      <td className="px-4 py-3 text-slate-600">{r.total_applications}</td>
+                      <td className="px-4 py-3"><span className="text-green-600 font-semibold">{r.completed}</span></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-blue-600">{(r.completion_rate * 100).toFixed(1)}%</span>
+                          <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-blue-500 rounded-full" 
+                              style={{ width: `${r.completion_rate * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Survival Rate Tab */}
+      {activeMetric === 'survival' && current.metric && (
+        <div className="space-y-5">
+          {/* Main Survival Metrics */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { label: 'Производителей в 2025', value: current.initial_count, icon: Equals, color: 'text-slate-900', bg: 'bg-slate-100' },
+              { label: 'Вернулось в 2026', value: current.survived_count, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
+              { label: 'Процент выживаемости', value: (current.survival_percentage || 0).toFixed(1) + '%', icon: TrendUp, color: 'text-blue-600', bg: 'bg-blue-100' },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-xs text-slate-500 font-medium">{label}</p>
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
+                    <Icon size={15} className={color} weight="bold" />
+                  </div>
+                </div>
+                <div className={`text-2xl font-bold ${color}`}>{value ?? '—'}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Survival Details */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Характеристика вернувшихся производителей (2026)</h3>
+            {current.details ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs text-slate-600 font-medium mb-1">Всего заявок в 2026</p>
+                  <p className="text-2xl font-bold text-slate-900">{current.details.total_2026 || 0}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs text-slate-600 font-medium mb-1">Исполнено в 2026</p>
+                  <p className="text-2xl font-bold text-green-600">{current.details.completed_2026 || 0}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-xs text-slate-600 font-medium mb-1">% Исполнения 2026</p>
+                  <p className="text-2xl font-bold text-blue-600">{((current.details.completion_rate_2026 || 0) * 100).toFixed(1)}%</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-slate-500 text-sm">Нет данных о вернувшихся производителях</p>
+            )}
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-sm text-blue-800">
+              💡 <strong>Вывод:</strong> {current.summary || 'Недостаточно данных'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Year-over-Year Tab */}
+      {activeMetric === 'year_over_year' && current.metric && (
+        <div className="space-y-5">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Проанализировано', value: current.total_analyzed, icon: Equals, color: 'text-slate-900', bg: 'bg-slate-100' },
+              { label: 'Улучшились', value: current.improved_count, icon: TrendUp, color: 'text-green-600', bg: 'bg-green-100' },
+              { label: 'Без измен.', value: (current.total_analyzed - current.improved_count) || 0, icon: Equals, color: 'text-amber-600', bg: 'bg-amber-100' },
+              { label: 'Ср. индекс', value: (current.avg_effectiveness_score || 0) + '%', icon: CheckCircle, color: 'text-blue-600', bg: 'bg-blue-100' },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-xs text-slate-500 font-medium">{label}</p>
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
+                    <Icon size={15} className={color} weight="bold" />
+                  </div>
+                </div>
+                <div className={`text-2xl font-bold ${color}`}>{value ?? '—'}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Detailed Table */}
+          {current.total_analyzed > 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader title="Детальный анализ производителей" subtitle="Сравнение показателей 2025 vs 2026" />
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      {['Производитель', 'Регион', 'Индекс', 'Δ Заявок', 'Δ Сумма', 'Δ Активность', 'Статус'].map(h => (
+                        <th key={h} className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {current.producers?.slice(0, 30).map((p, i) => (
+                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                        <td 
+                          className="px-4 py-3 font-mono text-slate-700 font-semibold cursor-pointer hover:text-blue-600 transition-colors"
+                          onClick={() => navigate(`/producer/${p.producer_id}`)}
+                        >
+                          {p.producer_id}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 max-w-[100px] truncate">{p.region || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`font-bold ${p.effectiveness_score >= 60 ? 'text-green-600' : p.effectiveness_score >= 40 ? 'text-amber-600' : 'text-red-500'}`}>
+                            {p.effectiveness_score}%
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Delta value={p.deltas?.apps} suffix=" заявок" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Delta value={p.deltas?.avg_amount} suffix=" ₸" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Delta value={p.deltas?.activity} suffix=" /мес" />
+                        </td>
+                        <td className="px-4 py-3">
+                          {p.improved
+                            ? <span className="text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">↑ Лучше</span>
+                            : <span className="text-[10px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">— Стабиль</span>
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+              <p className="text-yellow-800 text-sm">
+                ⚠️ {current.summary || 'Недостаточно данных для анализа года-в-год'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

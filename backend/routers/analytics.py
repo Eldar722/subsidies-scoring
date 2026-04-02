@@ -17,6 +17,7 @@ try:
 except ImportError:
     _analytics_cache = {}
 import core.state as state
+from routers.analytics_improved import compute_all_effectiveness_metrics
 
 router = APIRouter()
 
@@ -307,7 +308,7 @@ def subsidy_effectiveness():
     if cache_key in _analytics_cache:
         return _analytics_cache[cache_key]
 
-    result = _compute_effectiveness(state.DF)
+    result = compute_all_effectiveness_metrics(state.DF)
     _analytics_cache[cache_key] = result
     return result
 

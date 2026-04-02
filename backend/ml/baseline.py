@@ -1,5 +1,6 @@
 import pandas as pd
 from ml.scoring import score_dataframe
+from ml.hidden_talent_detector import detect_hidden_talents_by_delta
 import core.state as state
 
 
@@ -34,16 +35,17 @@ def compute_shortlist(df, top_n: int = 20):
         producer_scores["fcfs_rank_pos"] - producer_scores["ml_rank"]
     ).astype(int)
 
-    # hidden_talent: delta > 10 И ml_score > 0.7 (как в ТЗ)
-    threshold = state.MODEL_DATA.get("optimal_threshold", 0.5) if state.MODEL_DATA else 0.5
-    ml_high_threshold = max(threshold, 0.7)
-    producer_scores["hidden_talent"] = (
-        (producer_scores["delta"] > 10) &
-        (producer_scores["ml_score"] > ml_high_threshold)
+    # hidden_talent: используем centralized логику
+    producer_scores["hidden_talent"] = detect_hidden_talents_by_delta(
+        producer_scores, delta_threshold=10, score_multiplier=1.0
     )
 
     hidden_talent_total = int(producer_scores["hidden_talent"].sum())
     top = producer_scores.nlargest(top_n, "ml_score")
+    
+    # Get optimal_threshold from model data
+    from ml.hidden_talent_detector import get_optimal_threshold
+    threshold = get_optimal_threshold()
 
     return {
         "total_producers": int(len(producer_scores)),

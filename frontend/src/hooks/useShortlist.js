@@ -5,6 +5,7 @@ export function useShortlist(topN = 20) {
   return useQuery({
     queryKey: ['shortlist', topN],
     queryFn: () => getShortlist(topN),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    gcTime: 60_000,
   })
 }

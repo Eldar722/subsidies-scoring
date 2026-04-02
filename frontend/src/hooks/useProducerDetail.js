@@ -6,6 +6,7 @@ export function useProducerDetail(id) {
     queryKey: ['producer', id],
     queryFn: () => getProducerDetail(id),
     enabled: !!id,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    gcTime: 60_000,
   })
 }
