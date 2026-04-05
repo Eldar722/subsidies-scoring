@@ -25,7 +25,13 @@ def safe_transform(encoder, series):
 
 
 def score_dataframe(df_slice):
-    """Скоринг произвольного DataFrame — возвращает df с колонкой ml_score."""
+    """Скоринг произвольного DataFrame — возвращает df с колонкой ml_score.
+
+    Uses the SAME preprocessing as training:
+    - Group stats from precomputed cache (or recomputed from train data)
+    - LabelEncoder transform with known classes
+    - NaN fill with TRAIN medians (stored in artifact), NOT 0
+    """
     if state.MODEL_DATA is None:
         raise HTTPException(503, "Модель не загружена")
     if state.DF is None:
@@ -35,6 +41,8 @@ def score_dataframe(df_slice):
     features = state.MODEL_DATA["features"]
     encoders = state.MODEL_DATA["encoders"]
     threshold = state.MODEL_DATA.get("optimal_threshold", 0.5)
+    # Use train medians stored in artifact for consistent NaN fill
+    train_medians = state.MODEL_DATA.get("train_medians", {})
 
     df = df_slice.copy()
 
@@ -60,14 +68,20 @@ def score_dataframe(df_slice):
 
     for c in features:
         if c in df.columns:
-            df[c] = df[c].fillna(0)
+            # Use train medians (same as training), fallback to 0 if not in artifact
+            fill_val = train_medians.get(c, 0.0)
+            df[c] = df[c].fillna(fill_val)
 
     valid = df.dropna(subset=features)
     if len(valid) == 0:
         return pd.DataFrame()
 
     valid = valid.copy()
-    valid["ml_score"] = model.predict_proba(valid[features])[:, 1]
+
+    # Convert to numpy to avoid sklearn FutureWarning about feature names
+    # (model was trained on numpy arrays without feature names)
+    X_to_predict = valid[features].values if hasattr(valid[features], 'values') else valid[features]
+    valid["ml_score"] = model.predict_proba(X_to_predict)[:, 1]
     valid["ml_decision"] = (valid["ml_score"] >= threshold).astype(int)
 
     return valid

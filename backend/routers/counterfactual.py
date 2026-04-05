@@ -1,5 +1,11 @@
-from fastapi import APIRouter, HTTPException
+"""
+counterfactual.py — counterfactual explanations for producers.
+Rate limit: COMPUTE (20/min)
+"""
+
+from fastapi import APIRouter, HTTPException, Request
 import numpy as np
+from core.rate_limits import limiter, COMPUTE
 import core.state as state
 from ml.scoring import score_dataframe
 from ml.feature_engineering import build_features, FEATURES
@@ -9,7 +15,8 @@ router = APIRouter()
 
 
 @router.get("/producers/{producer_id}/counterfactual")
-def get_counterfactual(producer_id: str):
+@limiter.limit(COMPUTE)
+def get_counterfactual(request: Request, producer_id: str):
     if state.DF is None or state.MODEL_DATA is None:
         raise HTTPException(503, "Data or model not loaded")
 

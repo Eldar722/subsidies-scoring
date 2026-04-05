@@ -16,7 +16,7 @@ def compute_baseline(df, model_scores: dict):
         model_scores: dict {producer_id: ml_score}.
 
     Returns:
-        DataFrame: producer_id, ml_score, ml_rank, fcfs_rank, delta, hidden_talent
+        DataFrame: producer_id, ml_score, ml_rank, fcfs_rank, delta, hidden_talent, total_apps
     """
     # FCFS: ранг по дате первой заявки (чем раньше — тем выше)
     first_submission = (
@@ -35,9 +35,15 @@ def compute_baseline(df, model_scores: dict):
     scores_df = scores_df.sort_values("ml_score", ascending=False).reset_index(drop=True)
     scores_df["ml_rank"] = range(1, len(scores_df) + 1)
 
+    # Подсчет количества заявок для каждого производителя
+    total_apps = df.groupby("producer_id").size().reset_index(name="total_apps")
+
     # Объединение
     result = scores_df.merge(
         first_submission[["producer_id", "fcfs_rank"]], on="producer_id", how="inner"
+    )
+    result = result.merge(
+        total_apps[["producer_id", "total_apps"]], on="producer_id", how="left"
     )
 
     # Delta = fcfs_rank - ml_rank

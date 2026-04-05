@@ -194,7 +194,7 @@ export default function ProducerPage() {
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
                 <Sparkle size={13} className="text-blue-600" weight="fill" />
-                <span className="text-blue-700 font-semibold text-xs tracking-wide">Gemini AI — объяснение балла</span>
+                <span className="text-blue-700 font-semibold text-xs tracking-wide">SubsidyLens AI — объяснение балла</span>
               </div>
               {adviceError && (
                 <button
@@ -208,7 +208,7 @@ export default function ProducerPage() {
             {adviceLoading
               ? <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-4/5" /></div>
               : adviceError
-                ? <p className="text-sm text-blue-600 leading-relaxed opacity-70">Не удалось получить объяснение от Gemini AI. Проверьте соединение и попробуйте снова.</p>
+                ? <p className="text-sm text-blue-600 leading-relaxed opacity-70">Не удалось получить объяснение от SubsidyLens AI. Проверьте соединение и попробуйте снова.</p>
                 : <p className="text-sm text-slate-700 leading-relaxed">{advice?.score_explanation}</p>
             }
           </div>

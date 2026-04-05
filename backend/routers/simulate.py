@@ -1,6 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+"""
+simulate.py — weighted score simulation with custom weights.
+Rate limit: COMPUTE (20/min) — recalculates scores.
+"""
+
+from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel, Field
 from typing import Optional
+from core.rate_limits import limiter, COMPUTE
 from ml.simulator_service import simulate, DEFAULT_WEIGHTS
 import core.state as state
 
@@ -31,7 +37,9 @@ class SimulateRequest(BaseModel):
 
 
 @router.get("/simulate")
+@limiter.limit(COMPUTE)
 def run_simulation(
+    request: Request,
     completion_rate: float = Query(DEFAULT_WEIGHTS["completion_rate"]),
     approval_rate: float = Query(DEFAULT_WEIGHTS["approval_rate"]),
     direction_diversity: float = Query(DEFAULT_WEIGHTS["direction_diversity"]),
@@ -53,7 +61,8 @@ def run_simulation(
 
 
 @router.post("/simulate")
-def run_simulation_post(body: SimulateRequest):
+@limiter.limit(COMPUTE)
+def run_simulation_post(request: Request, body: SimulateRequest):
     if state.DF is None:
         raise HTTPException(503, "Данные не загружены")
     if state.MODEL_DATA is None:

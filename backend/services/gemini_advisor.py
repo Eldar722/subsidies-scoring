@@ -8,8 +8,9 @@ import json
 import time
 import google.generativeai as genai
 from groq import Groq
-from supabase import create_client
-from core.config import GEMINI_API_KEY, GROQ_API_KEY, AI_PROVIDER, SUPABASE_URL, SUPABASE_KEY
+from core.config import GEMINI_API_KEY, GROQ_API_KEY, AI_PROVIDER
+from services.supabase_service import _get_admin_client
+from services.gemini_advice_store import upsert_advice, sample_advice_payload
 
 genai.configure(api_key=GEMINI_API_KEY)
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -51,17 +52,18 @@ DEFAULT_ADVICE = {
 }
 
 
-def _get_supabase():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
 def _format_shap(shap_items):
     lines = []
     for item in shap_items:
-        sign = "+" if item["shap_value"] > 0 else ""
-        lines.append(
-            f"  {item['feature_label']}: {item['feature_value']:.2f} (SHAP {sign}{item['shap_value']:.4f})"
-        )
+        sv = float(item.get("shap_value") or 0)
+        sign = "+" if sv > 0 else ""
+        fv = item.get("feature_value")
+        try:
+            fv_s = f"{float(fv):.2f}" if fv is not None else "—"
+        except (TypeError, ValueError):
+            fv_s = "—"
+        label = item.get("feature_label") or item.get("feature") or "?"
+        lines.append(f"  {label}: {fv_s} (SHAP {sign}{sv:.4f})")
     return "\n".join(lines)
 
 
@@ -130,7 +132,7 @@ def get_advice(producer_data: dict, max_retries=2) -> dict:
 
 def batch_advise(limit=100):
     """Получить советы для топ-N производителей и сохранить в Supabase."""
-    client = _get_supabase()
+    client = _get_admin_client()
 
     # Получаем топ производителей из scores
     scores_res = (
@@ -180,11 +182,7 @@ def batch_advise(limit=100):
 
         advice = get_advice(producer_data)
 
-        # Сохраняем
-        client.table("gemini_advice").upsert({
-            "producer_id": pid,
-            "advice_json": advice,
-        }).execute()
+        upsert_advice(client, pid, advice)
 
         success += 1
         if (i + 1) % 10 == 0:
@@ -204,8 +202,9 @@ if __name__ == "__main__":
     batch_advise(limit=20)
 
     # Показать пример
-    client = _get_supabase()
+    client = _get_admin_client()
     sample = client.table("gemini_advice").select("*").limit(1).execute()
     if sample.data:
+        payload = sample_advice_payload(sample.data[0])
         print(f"\nПример совета для {sample.data[0]['producer_id']}:")
-        print(json.dumps(sample.data[0]["advice_json"], ensure_ascii=False, indent=2))
+        print(json.dumps(payload or {}, ensure_ascii=False, indent=2))

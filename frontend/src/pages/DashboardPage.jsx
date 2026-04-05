@@ -58,6 +58,8 @@ function PipelineButton() {
   const [stage, setStage] = useState('')
   const wsRef = useRef(null)
   const pollRef = useRef(null)
+  /** Игнорировать «idle» до успешного POST и завершения текущего прогона */
+  const awaitingRunRef = useRef(false)
 
   const stopAll = () => {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
@@ -65,23 +67,29 @@ function PipelineButton() {
   }
 
   const handleFinished = (status) => {
+    if (!awaitingRunRef.current) return
+    awaitingRunRef.current = false
     stopAll()
     setRunning(false)
     setStage('')
     if (status.last_error) {
       showToast({ message: `Ошибка обучения: ${status.last_error.slice(0, 80)}`, type: 'error' })
-    } else if (status.last_metrics) {
-      const auc = status.last_metrics?.roc_auc?.toFixed(4)
+    } else if (status.last_metrics != null && status.last_metrics.roc_auc != null) {
+      const auc = Number(status.last_metrics.roc_auc).toFixed(4)
       showToast({ message: `Модель обновлена! AUC: ${auc}`, type: 'success' })
+      queryClient.invalidateQueries()
+    } else {
+      showToast({ message: 'Пайплайн завершён', type: 'success' })
       queryClient.invalidateQueries()
     }
   }
 
   const startPolling = () => {
+    if (pollRef.current) return
     pollRef.current = setInterval(async () => {
       try {
         const status = await getPipelineStatus()
-        if (!status.running) handleFinished(status)
+        if (!status.running && awaitingRunRef.current) handleFinished(status)
       } catch {
         // ignore poll errors
       }
@@ -100,30 +108,40 @@ function PipelineButton() {
       try {
         const status = JSON.parse(event.data)
         if (status.running) setStage('Обучение модели...')
-        if (!status.running) handleFinished(status)
+        if (!status.running && awaitingRunRef.current) handleFinished(status)
       } catch { /* ignore parse errors */ }
     }
 
     ws.onerror = () => {
-      // WebSocket failed — fall back to polling
       wsRef.current = null
       setStage('Обучение...')
       startPolling()
     }
 
-    ws.onclose = () => { wsRef.current = null }
+    ws.onclose = () => {
+      wsRef.current = null
+      if (awaitingRunRef.current) {
+        setStage('Обучение...')
+        startPolling()
+      }
+    }
   }
 
-  useEffect(() => () => stopAll(), [])
+  useEffect(() => () => {
+    awaitingRunRef.current = false
+    stopAll()
+  }, [])
 
   const handleRun = async () => {
     try {
+      awaitingRunRef.current = true
       setRunning(true)
       setStage('Запуск...')
       await runPipeline()
       showToast({ message: 'Пайплайн запущен', type: 'info' })
       startWebSocket()
     } catch (err) {
+      awaitingRunRef.current = false
       setRunning(false)
       setStage('')
       const msg = err?.response?.data?.detail || 'Не удалось запустить пайплайн'

@@ -21,12 +21,12 @@ export function Header() {
   }
   const isProducer = pathname.startsWith('/producer/')
   const meta = isProducer
-    ? { title: 'Профиль производителя', subtitle: 'SHAP · Gemini AI · История' }
+    ? { title: 'Профиль производителя', subtitle: 'SHAP · SubsidyLens AI · История' }
     : (PAGE_META[pathname] || { title: 'Дашборд', subtitle: '' })
 
   return (
     <header
-      className="sticky top-0 z-30 flex items-center px-6 flex-shrink-0"
+      className="app-header-shell sticky top-0 z-[1300] flex items-center px-6 flex-shrink-0"
       style={{
         height:      'var(--header-height, 60px)',
         background:  'var(--bg-surface)',

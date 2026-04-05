@@ -24,14 +24,15 @@ CREATE TABLE IF NOT EXISTS scores (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. SHAP Values (top-N per producer)
+-- 3. SHAP Values (top-N per producer) — идемпотентный upsert по (producer_id, feature)
 CREATE TABLE IF NOT EXISTS shap_values (
   id BIGSERIAL PRIMARY KEY,
-  producer_id TEXT,
-  feature TEXT,
+  producer_id TEXT NOT NULL,
+  feature TEXT NOT NULL,
   shap_value FLOAT,
   feature_value FLOAT,
-  feature_label TEXT
+  feature_label TEXT,
+  CONSTRAINT shap_values_producer_feature_key UNIQUE (producer_id, feature)
 );
 CREATE INDEX IF NOT EXISTS idx_shap_producer ON shap_values(producer_id);
 
@@ -55,10 +56,10 @@ CREATE TABLE IF NOT EXISTS fairness_cache (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 6. Gemini Advice Cache
+-- 6. AI Advice Cache (код API использует колонку advice_json)
 CREATE TABLE IF NOT EXISTS gemini_advice (
   producer_id TEXT PRIMARY KEY,
-  advice JSONB,
+  advice_json JSONB,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

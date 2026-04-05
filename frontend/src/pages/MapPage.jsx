@@ -43,7 +43,7 @@ function RegionSidePanel({ region, onClose }) {
   if (!region) return null
   const isOutlier = Math.abs(region.z_score || 0) > 1
   return (
-    <div className="fixed right-0 top-0 h-screen w-80 bg-white border-l border-slate-200 shadow-xl z-[1000] flex flex-col">
+    <div className="fixed right-0 top-0 h-screen w-80 bg-white border-l border-slate-200 shadow-xl z-[1400] flex flex-col">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <div>
           <h3 className="font-semibold text-slate-900 text-sm leading-snug">{region.region || region.name}</h3>

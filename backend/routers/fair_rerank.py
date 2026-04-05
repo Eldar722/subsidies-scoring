@@ -1,4 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+"""
+fair_rerank.py — fairness-aware shortlist reranking.
+Rate limit: COMPUTE (20/min) — triggers ML scoring + fairness computation.
+"""
+
+from fastapi import APIRouter, HTTPException, Request, Query
+from core.rate_limits import limiter, COMPUTE
 import core.state as state
 from ml.scoring import score_dataframe
 from ml.fair_reranker import compute_fair_shortlist
@@ -8,7 +14,9 @@ router = APIRouter()
 
 
 @router.get("/shortlist/fair")
+@limiter.limit(COMPUTE)
 def fair_shortlist(
+    request: Request,
     group_by: str = Query("region", regex="^(region|direction)$"),
     top_n: int = Query(20, ge=5, le=100),
     tolerance: float = Query(0.5, ge=0, le=2),

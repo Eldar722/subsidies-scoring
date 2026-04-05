@@ -6,11 +6,14 @@ analytics.py — аналитический модуль субсидий.
 
 2. Red Flags / Anti-Corruption: Isolation Forest для поиска аномальных паттернов.
    Дробление, мимикрия, кластер заявок, сумма-аномалия.
+
+Rate limits: COMPUTE (20/min) — expensive aggregations + Isolation Forest.
 """
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Request, Query
+from core.rate_limits import limiter, COMPUTE
 try:
     from cachetools import TTLCache
     _analytics_cache = TTLCache(maxsize=4, ttl=1800)
@@ -300,7 +303,8 @@ def _compute_red_flags(df: pd.DataFrame) -> dict:
 # ─────────────────────────────────────────────
 
 @router.get("/analytics/subsidy-effectiveness")
-def subsidy_effectiveness():
+@limiter.limit(COMPUTE)
+def subsidy_effectiveness(request: Request):
     if state.DF is None:
         raise HTTPException(503, "Данные не загружены")
 
@@ -314,7 +318,8 @@ def subsidy_effectiveness():
 
 
 @router.get("/analytics/red-flags")
-def red_flags():
+@limiter.limit(COMPUTE)
+def red_flags(request: Request):
     if state.DF is None:
         raise HTTPException(503, "Данные не загружены")
 

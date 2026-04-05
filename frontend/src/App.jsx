@@ -11,6 +11,8 @@ import SimulatorPage from './pages/SimulatorPage'
 import FairnessPage from './pages/FairnessPage'
 import MapPage from './pages/MapPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import Dashboard from './pages/Dashboard'
+import Setup from './pages/Setup'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 2, staleTime: 60_000 } },
@@ -30,6 +32,11 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Public routes - new MVP validation system */}
+            <Route path="/setup" element={<Setup />} />
+            <Route path="/validate" element={<Dashboard />} />
+            
+            {/* Legacy authenticated routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<Layout />}>
@@ -42,7 +49,7 @@ export default function App() {
                 <Route path="/analytics" element={<AnalyticsPage />} />
               </Route>
             </Route>
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/validate" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

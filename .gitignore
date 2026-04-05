@@ -6,6 +6,10 @@
 backend/.env
 frontend/.env.local
 
+# Model backups (created by atomic save)
+backend/model.pkl.bak
+backend/model.pkl.tmp
+
 # ===== PYTHON =====
 __pycache__/
 *.pyc

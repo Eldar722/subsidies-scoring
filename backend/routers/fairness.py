@@ -1,5 +1,11 @@
-from fastapi import APIRouter, HTTPException
+"""
+fairness.py — fairness analysis endpoints.
+Rate limit: READ_HEAVY (60/min)
+"""
+
+from fastapi import APIRouter, HTTPException, Request
 from cachetools import TTLCache
+from core.rate_limits import limiter, READ_HEAVY
 import core.state as state
 from ml.fairness import compute_fairness_report
 
@@ -76,7 +82,8 @@ def _adapt_fairness_response(report: dict) -> dict:
 
 
 @router.get("/fairness")
-def fairness():
+@limiter.limit(READ_HEAVY)
+def fairness(request: Request):
     if state.DF is None:
         raise HTTPException(503, "Данные не загружены")
 

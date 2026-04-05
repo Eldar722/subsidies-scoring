@@ -1,12 +1,15 @@
 """
 audit.py — неизменяемый журнал аудита решений пайплайна.
 Каждый запуск pipeline добавляет запись с SHA-256 хешем.
+
+Rate limits: READ_LIGHT (120/min) — read-only audit log.
 """
 
 import hashlib
 import json
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from core.rate_limits import limiter, READ_LIGHT
 from collections import deque
 import core.state as state
 
@@ -32,7 +35,8 @@ def add_audit_entry(event_type: str, payload: dict):
 
 
 @router.get("/audit/ledger")
-def get_audit_ledger(limit: int = 50):
+@limiter.limit(READ_LIGHT)
+def get_audit_ledger(request: Request, limit: int = 50):
     """
     Возвращает журнал аудита (последние N записей).
     Каждая запись содержит hash, timestamp, dataset_size.
@@ -45,7 +49,8 @@ def get_audit_ledger(limit: int = 50):
 
 
 @router.get("/audit/verify/{record_hash}")
-def verify_audit_entry(record_hash: str):
+@limiter.limit(READ_LIGHT)
+def verify_audit_entry(request: Request, record_hash: str):
     """Проверить целостность записи по её хешу."""
     for entry in _audit_log:
         if entry.get("hash") == record_hash:

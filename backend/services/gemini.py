@@ -1,21 +1,28 @@
-from fastapi import APIRouter, HTTPException
-from supabase import create_client
-from core.config import SUPABASE_URL, SUPABASE_KEY
+"""
+gemini.py — AI advisor endpoints (Gemini/Groq).
+Rate limit: AI (5/min) — expensive external API calls.
+"""
+
+from fastapi import APIRouter, HTTPException, Request
+from core.rate_limits import limiter, AI
+from services.supabase_service import _get_admin_client
 from services.gemini_advisor import get_advice
+from services.gemini_advice_store import get_cached_advice, upsert_advice
 from cachetools import TTLCache
 
 router = APIRouter()
 # Храним советы в памяти до 24 часов (86400 сек)
 advice_cache = TTLCache(maxsize=1000, ttl=86400)
 
-@router.get("/producers/{producer_id}/advice")
-def get_producer_advice(producer_id: str):
-    client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Проверяем кэш
-    cached = client.table("gemini_advice").select("advice_json").eq("producer_id", producer_id).execute()
-    if cached.data:
-        return cached.data[0]["advice_json"]
+@router.get("/producers/{producer_id}/advice")
+@limiter.limit(AI)
+def get_producer_advice(request: Request, producer_id: str):
+    client = _get_admin_client()
+
+    cached_payload = get_cached_advice(client, producer_id)
+    if cached_payload is not None:
+        return cached_payload
 
     # Собираем данные и генерируем
     score_res = client.table("scores").select("*").eq("producer_id", producer_id).execute()
@@ -48,11 +55,7 @@ def get_producer_advice(producer_id: str):
 
     advice = get_advice(producer_data)
 
-    # Кэшируем
-    client.table("gemini_advice").upsert({
-        "producer_id": producer_id,
-        "advice_json": advice,
-    }).execute()
+    upsert_advice(client, producer_id, advice)
 
     return advice
 def get_advice_fallback(producer_id: str):

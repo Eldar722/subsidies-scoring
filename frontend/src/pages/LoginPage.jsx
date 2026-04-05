@@ -54,10 +54,10 @@ export default function LoginPage() {
             <Leaf size={22} weight="fill" className="text-white" />
           </div>
           <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-            AI Субсидии
+            SubsidyLens
           </h1>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            Decentrathon 5.0 — МСХ РК
+          <p className="text-xs mt-1 text-center" style={{ color: 'var(--text-muted)' }}>
+            Прозрачный скоринг поддержки АПК · ML · SHAP
           </p>
         </div>
 

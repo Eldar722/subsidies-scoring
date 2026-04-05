@@ -1,73 +1,361 @@
 """
 supabase_service.py — загрузка данных в Supabase (producers, scores, shap_values, model_metrics).
+
+КРИТИЧЕСКИЕ ПРАВИЛА:
+  - Все записи в критические ML-таблицы через psycopg2 + DATABASE_URL (не REST API)
+  - SHAP: atomic staging → verify → swap через BEGIN/COMMIT/ROLLBACK
+  - Никакого delete→insert без гарантии успеха
+  - Supabase REST API используется ТОЛЬКО для чтения
 """
 
 import math
-from supabase import create_client
-from core.config import SUPABASE_URL, SUPABASE_KEY
+import os
+import time as time_mod
+from supabase import create_client, ClientOptions
+from core.config import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_KEY, DATABASE_URL
 
 BATCH_SIZE = 500
+_ADMIN_TIMEOUT = float(os.environ.get("SUPABASE_POSTGREST_TIMEOUT", "300"))
 
+
+# ══════════════════════════════════════════════════════════════
+# SUPABASE REST CLIENTS (for reads only)
+# ══════════════════════════════════════════════════════════════
 
 def _get_client():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    """Supabase client with anon key (for reads)."""
+    return create_client(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        options=ClientOptions(postgrest_client_timeout=_ADMIN_TIMEOUT),
+    )
+
+
+def _get_admin_client():
+    """Supabase client with service role key (for non-critical reads/writes)."""
+    return create_client(
+        SUPABASE_URL,
+        SUPABASE_KEY,
+        options=ClientOptions(postgrest_client_timeout=_ADMIN_TIMEOUT),
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# POSTGRES DIRECT CONNECTION (for critical writes)
+# ══════════════════════════════════════════════════════════════
+
+def _get_pg_connection():
+    """Direct psycopg2 connection for atomic writes."""
+    import psycopg2
+    if not DATABASE_URL:
+        raise RuntimeError("[FATAL] DATABASE_URL not set — cannot perform critical writes")
+    return psycopg2.connect(DATABASE_URL, connect_timeout=30)
+
+
+# ══════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════
+
+def _clean_value(v):
+    """Replace NaN/inf with None for Postgres."""
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+        return None
+    return v
 
 
 def _clean_row(row: dict) -> dict:
-    """Заменить NaN/inf на None для JSON-сериализации."""
-    cleaned = {}
-    for k, v in row.items():
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            cleaned[k] = None
-        else:
-            cleaned[k] = v
-    return cleaned
+    """Clean all values in a row dict."""
+    return {k: _clean_value(v) for k, v in row.items()}
 
 
-def _upsert_batch(table: str, records: list, batch_size: int = BATCH_SIZE):
-    """Upsert записей батчами."""
-    client = _get_client()
+def _execute_with_retries(fn, *, attempts: int = 4, label: str = "query") -> None:
+    """Retry wrapper for REST API calls."""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            fn()
+            return
+        except Exception as e:
+            last = e
+            if i < attempts - 1:
+                delay = 0.5 * (2**i)
+                print(f"  [WARN] {label} retry {i + 1}/{attempts} after {delay}s: {e}")
+                time_mod.sleep(delay)
+    assert last is not None
+    raise last
+
+
+# ══════════════════════════════════════════════════════════════
+# PRODUCERS — atomic write via psycopg2
+# ══════════════════════════════════════════════════════════════
+
+def upsert_producers(producers_df):
+    """Upsert producers via direct Postgres (ON CONFLICT DO UPDATE)."""
+    records = producers_df.to_dict(orient="records")
+    if not records:
+        print("  [WARN] No producers to upsert")
+        return 0
+
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            for row in records:
+                row = _clean_row(row)
+                cur.execute("""
+                    INSERT INTO producers (producer_id, region, direction, total_applications, completion_rate, updated_at)
+                    VALUES (%(producer_id)s, %(region)s, %(direction)s, %(total_applications)s, %(completion_rate)s, now())
+                    ON CONFLICT (producer_id) DO UPDATE SET
+                        region = EXCLUDED.region,
+                        direction = EXCLUDED.direction,
+                        total_applications = EXCLUDED.total_applications,
+                        completion_rate = EXCLUDED.completion_rate,
+                        updated_at = now()
+                """, row)
+        conn.commit()
+        print(f"  producers: {len(records)} upserted (psycopg2, atomic)")
+        return len(records)
+    except Exception as e:
+        conn.rollback()
+        print(f"  ❌ producers upsert FAILED, ROLLBACK: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# SCORES — atomic write via psycopg2
+# ══════════════════════════════════════════════════════════════
+
+def upsert_scores(scores_df_or_list):
+    """Upsert scores via direct Postgres (ON CONFLICT DO UPDATE)."""
+    if hasattr(scores_df_or_list, "to_dict"):
+        records = scores_df_or_list.to_dict(orient="records")
+    else:
+        records = scores_df_or_list
+
+    if not records:
+        print("  [WARN] No scores to upsert")
+        return 0
+
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            for row in records:
+                row = _clean_row(row)
+                cur.execute("""
+                    INSERT INTO scores (producer_id, ml_score, ml_rank, fcfs_rank, delta, hidden_talent, updated_at)
+                    VALUES (%(producer_id)s, %(ml_score)s, %(ml_rank)s, %(fcfs_rank)s, %(delta)s, %(hidden_talent)s, now())
+                    ON CONFLICT (producer_id) DO UPDATE SET
+                        ml_score = EXCLUDED.ml_score,
+                        ml_rank = EXCLUDED.ml_rank,
+                        fcfs_rank = EXCLUDED.fcfs_rank,
+                        delta = EXCLUDED.delta,
+                        hidden_talent = EXCLUDED.hidden_talent,
+                        updated_at = now()
+                """, row)
+        conn.commit()
+        print(f"  scores: {len(records)} upserted (psycopg2, atomic)")
+        return len(records)
+    except Exception as e:
+        conn.rollback()
+        print(f"  ❌ scores upsert FAILED, ROLLBACK: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# SHAP VALUES — ATOMIC staging → verify → swap via psycopg2
+# ══════════════════════════════════════════════════════════════
+
+def upsert_shap(shap_list: list) -> int:
+    """Atomic SHAP upsert: staging → verify → swap.
+    
+    Strategy:
+      1. TRUNCATE staging table
+      2. INSERT all new data into staging
+      3. Verify staging row count matches expected
+      4. DELETE old data from production for affected producer_ids
+      5. INSERT FROM staging into production
+      6. TRUNCATE staging
+      7. COMMIT (all steps are in one transaction)
+      
+    On ANY failure → ROLLBACK (production table untouched).
+    """
+    if not shap_list:
+        print("  [WARN] Empty SHAP list — skipping")
+        return 0
+
+    expected_count = len(shap_list)
+    affected_pids = list({str(r["producer_id"]) for r in shap_list})
+
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            # Step 1: Clear staging
+            cur.execute("TRUNCATE TABLE shap_values_staging")
+
+            # Step 2: Insert into staging
+            for row in shap_list:
+                row = _clean_row(row)
+                cur.execute("""
+                    INSERT INTO shap_values_staging (producer_id, feature, shap_value, feature_value, feature_label)
+                    VALUES (%(producer_id)s, %(feature)s, %(shap_value)s, %(feature_value)s, %(feature_label)s)
+                    ON CONFLICT (producer_id, feature) DO UPDATE SET
+                        shap_value = EXCLUDED.shap_value,
+                        feature_value = EXCLUDED.feature_value,
+                        feature_label = EXCLUDED.feature_label
+                """, row)
+
+            # Step 3: Verify staging count
+            cur.execute("SELECT COUNT(*) FROM shap_values_staging")
+            staged_count = cur.fetchone()[0]
+
+            if staged_count < expected_count * 0.95:
+                raise RuntimeError(
+                    f"SHAP staging verification FAILED: "
+                    f"staged={staged_count}, expected={expected_count} "
+                    f"(threshold 95%)"
+                )
+
+            print(f"    staging: {staged_count}/{expected_count} rows verified ✓")
+
+            # Step 4: Delete old production data for affected producers
+            # Use ANY() for efficient batch delete
+            cur.execute(
+                "DELETE FROM shap_values WHERE producer_id = ANY(%s)",
+                (affected_pids,)
+            )
+            deleted = cur.rowcount
+            print(f"    deleted: {deleted} old rows from production ✓")
+
+            # Step 5: Copy from staging to production
+            cur.execute("""
+                INSERT INTO shap_values (producer_id, feature, shap_value, feature_value, feature_label, updated_at)
+                SELECT producer_id, feature, shap_value, feature_value, feature_label, now()
+                FROM shap_values_staging
+            """)
+            inserted = cur.rowcount
+            print(f"    inserted: {inserted} rows into production ✓")
+
+            # Step 6: Clear staging
+            cur.execute("TRUNCATE TABLE shap_values_staging")
+
+        # Step 7: COMMIT — all or nothing
+        conn.commit()
+        print(f"  shap_values: {inserted} upserted (psycopg2, atomic staging→swap)")
+        return inserted
+
+    except Exception as e:
+        conn.rollback()
+        print(f"  ❌ SHAP upsert FAILED, ROLLBACK (production data preserved): {e}")
+        # Try to clean up staging even after rollback
+        try:
+            conn2 = _get_pg_connection()
+            conn2.autocommit = True
+            with conn2.cursor() as cur2:
+                cur2.execute("TRUNCATE TABLE shap_values_staging")
+            conn2.close()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# MODEL METRICS — atomic write via psycopg2
+# ══════════════════════════════════════════════════════════════
+
+def upsert_metrics(metrics_dict: dict) -> int:
+    """Upsert model_metrics via Postgres (ON CONFLICT DO UPDATE)."""
+    conn = _get_pg_connection()
+    try:
+        conn.autocommit = False
+        row = _clean_row(metrics_dict)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO model_metrics (run_id, roc_auc, avg_precision, best_f1, optimal_threshold, cv_auc_mean, train_size, val_size, created_at)
+                VALUES (%(run_id)s, %(roc_auc)s, %(avg_precision)s, %(best_f1)s, %(optimal_threshold)s, %(cv_auc_mean)s, %(train_size)s, %(val_size)s, now())
+                ON CONFLICT (run_id) DO UPDATE SET
+                    roc_auc = EXCLUDED.roc_auc,
+                    avg_precision = EXCLUDED.avg_precision,
+                    best_f1 = EXCLUDED.best_f1,
+                    optimal_threshold = EXCLUDED.optimal_threshold,
+                    cv_auc_mean = EXCLUDED.cv_auc_mean,
+                    train_size = EXCLUDED.train_size,
+                    val_size = EXCLUDED.val_size,
+                    created_at = now()
+            """, row)
+        conn.commit()
+        print(f"  model_metrics: 1 upserted (psycopg2, atomic)")
+        return 1
+    except Exception as e:
+        conn.rollback()
+        print(f"  ❌ model_metrics upsert FAILED, ROLLBACK: {e}")
+        raise
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# READ HELPERS (REST API is fine for reads)
+# ══════════════════════════════════════════════════════════════
+
+def count_table(table: str) -> int:
+    """Count rows in a table (via REST API — safe for reads)."""
+    client = _get_admin_client()
+    result = client.table(table).select("*", count="exact").limit(0).execute()
+    return result.count if result.count is not None else 0
+
+
+def count_table_pg(table: str) -> int:
+    """Count rows in a table via direct Postgres."""
+    conn = _get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# LEGACY COMPATIBILITY — _upsert_batch via REST (non-critical)
+# ══════════════════════════════════════════════════════════════
+
+def _upsert_batch(
+    table: str,
+    records: list,
+    batch_size: int = BATCH_SIZE,
+    *,
+    on_conflict: str | None = None,
+):
+    """Upsert records in batches via REST API. For non-critical tables only."""
+    client = _get_admin_client()
     total = 0
     for i in range(0, len(records), batch_size):
         batch = [_clean_row(r) for r in records[i:i + batch_size]]
-        client.table(table).upsert(batch).execute()
+
+        def _run():
+            if on_conflict:
+                client.table(table).upsert(batch, on_conflict=on_conflict).execute()
+            else:
+                client.table(table).upsert(batch).execute()
+
+        _execute_with_retries(_run, label=f"{table} upsert batch {i // batch_size + 1}")
         total += len(batch)
         if total % 1000 == 0 or total == len(records):
             print(f"  {table}: {total}/{len(records)}")
     return total
 
 
-def upsert_producers(producers_df):
-    """Загрузить producers в Supabase."""
-    records = producers_df.to_dict(orient="records")
-    return _upsert_batch("producers", records)
-
-
-def upsert_scores(scores_df):
-    """Загрузить scores в Supabase."""
-    records = scores_df.to_dict(orient="records")
-    return _upsert_batch("scores", records)
-
-
-def upsert_shap(shap_list):
-    """Загрузить SHAP values в Supabase."""
-    return _upsert_batch("shap_values", shap_list)
-
-
-def upsert_metrics(metrics_dict):
-    """Загрузить model_metrics в Supabase."""
-    client = _get_client()
-    client.table("model_metrics").insert(metrics_dict).execute()
-    print(f"  model_metrics: 1 запись")
-    return 1
-
-
-def count_table(table: str) -> int:
-    """Подсчитать количество записей в таблице."""
-    client = _get_client()
-    result = client.table(table).select("*", count="exact").limit(0).execute()
-    return result.count
-
+# ══════════════════════════════════════════════════════════════
+# STANDALONE RUNNER
+# ══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     import numpy as np
@@ -108,18 +396,15 @@ if __name__ == "__main__":
     scores_upload["hidden_talent"] = scores_upload["hidden_talent"].astype(bool)
     upsert_scores(scores_upload)
 
-    # --- 5. SHAP values (топ-5 для каждого producer) ---
+    # --- 5. SHAP values (атомарно через staging) ---
     print("\nВычисление SHAP...")
     base_model = artifact["base_model"]
 
-    # Готовим features через train fit
     resolved = df.dropna(subset=["target"]).copy()
     resolved["target"] = resolved["target"].astype(int)
     train = resolved[resolved["year"] == 2025].reset_index(drop=True)
     X_train = build_features(train, fit=True)
 
-    # Берём уникальных производителей — одну строку на каждого
-    first_idx = train.groupby("producer_id").first().reset_index()
     first_mask = train.index.isin(
         train.groupby("producer_id").apply(lambda g: g.index[0]).values
     )
@@ -139,7 +424,7 @@ if __name__ == "__main__":
         "roc_auc": m["roc_auc"],
         "avg_precision": m["avg_precision"],
         "best_f1": m["best_f1"],
-        "optimal_threshold": m["optimal_threshold"],
+        "optimal_threshold": artifact.get("optimal_threshold", m.get("best_threshold", 0.5)),
         "cv_auc_mean": m["cv_auc_mean"],
         "train_size": int(m.get("train_size", len(train))),
         "val_size": int(m.get("val_size", 0)),
@@ -150,7 +435,7 @@ if __name__ == "__main__":
     print("\n=== Итого в Supabase ===")
     for table in ["producers", "scores", "shap_values", "model_metrics"]:
         try:
-            c = count_table(table)
+            c = count_table_pg(table)
             print(f"  {table}: {c}")
         except Exception as e:
             print(f"  {table}: ошибка — {e}")

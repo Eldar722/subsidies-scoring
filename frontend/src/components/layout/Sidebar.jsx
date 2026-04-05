@@ -39,7 +39,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="fixed left-0 top-0 h-screen flex flex-col z-40"
+      className="app-sidebar-shell fixed left-0 top-0 h-screen flex flex-col z-[1200]"
       style={{
         width:       'var(--sidebar-width, 240px)',
         background:  'var(--bg-surface)',
@@ -65,10 +65,10 @@ export function Sidebar() {
           </div>
           <div>
             <div className="text-sm font-bold leading-none" style={{ color: 'var(--text-primary)' }}>
-              AI Субсидии
+              SubsidyLens
             </div>
             <div className="text-[10px] leading-none mt-1 font-medium" style={{ color: 'var(--text-disabled)' }}>
-              Decentrathon 5.0
+              Скоринг и прозрачность поддержки АПК
             </div>
           </div>
         </div>

@@ -1,5 +1,11 @@
-from fastapi import APIRouter, HTTPException
+"""
+metrics.py — API metrics and statistics endpoints.
+Rate limit: READ_HEAVY (60/min)
+"""
+
+from fastapi import APIRouter, HTTPException, Request
 from cachetools import TTLCache
+from core.rate_limits import limiter, READ_HEAVY, WRITE
 import core.state as state
 
 router = APIRouter()
@@ -42,7 +48,8 @@ def _get_talent_aggregates():
 
 
 @router.get("/metrics")
-def metrics():
+@limiter.limit(READ_HEAVY)
+def metrics(request: Request):
     if state.MODEL_DATA is None:
         # Try loading model if not already loaded
         state.load_model()
@@ -99,7 +106,8 @@ def metrics():
 
 
 @router.post("/metrics/invalidate")
-def invalidate_metrics_cache():
+@limiter.limit(WRITE)
+def invalidate_metrics_cache(request: Request):
     """Очистить кэш метрик после обновления модели."""
     global _aggregates_cache
     _aggregates_cache.clear()
@@ -107,7 +115,8 @@ def invalidate_metrics_cache():
 
 
 @router.get("/stats")
-def stats():
+@limiter.limit(READ_HEAVY)
+def stats(request: Request):
     if state.DF is None:
         raise HTTPException(503, "Данные не загружены")
     return {

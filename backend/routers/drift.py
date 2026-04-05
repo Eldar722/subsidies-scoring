@@ -1,4 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query
+"""
+drift.py — drift detection and confidence scoring.
+Rate limit: READ_LIGHT (120/min)
+"""
+
+from fastapi import APIRouter, HTTPException, Request, Query
+from core.rate_limits import limiter, READ_LIGHT
+import threading
 import core.state as state
 from ml.drift_monitor import fit_monitor, compute_confidence, compute_drift_status
 from ml.feature_engineering import build_features, FEATURES
@@ -7,24 +14,30 @@ import numpy as np
 
 router = APIRouter()
 _monitor_fitted = False
+_monitor_lock = threading.Lock()
 
 
 def _ensure_monitor():
     global _monitor_fitted
     if _monitor_fitted:
         return
-    if state.DF is None or state.MODEL_DATA is None:
-        raise HTTPException(503, "Data or model not loaded")
-    resolved = state.DF[state.DF["target"].notna()].copy()
-    resolved["target"] = resolved["target"].astype(int)
-    train = resolved[resolved["year"] == 2025].reset_index(drop=True)
-    X_train = build_features(train, fit=True)
-    fit_monitor(X_train)
-    _monitor_fitted = True
+    with _monitor_lock:
+        # Double-check after acquiring lock
+        if _monitor_fitted:
+            return
+        if state.DF is None or state.MODEL_DATA is None:
+            raise HTTPException(503, "Data or model not loaded")
+        resolved = state.DF[state.DF["target"].notna()].copy()
+        resolved["target"] = resolved["target"].astype(int)
+        train = resolved[resolved["year"] == 2025].reset_index(drop=True)
+        X_train = build_features(train, fit=True)
+        fit_monitor(X_train)
+        _monitor_fitted = True
 
 
 @router.get("/drift/status")
-def drift_status():
+@limiter.limit(READ_LIGHT)
+def drift_status(request: Request):
     _ensure_monitor()
     resolved = state.DF[state.DF["target"].notna()].copy()
     resolved["target"] = resolved["target"].astype(int)
@@ -34,7 +47,8 @@ def drift_status():
 
 
 @router.get("/confidence/{producer_id}")
-def producer_confidence(producer_id: str):
+@limiter.limit(READ_LIGHT)
+def producer_confidence(request: Request, producer_id: str):
     _ensure_monitor()
     scored = score_dataframe(state.DF)
     rows = scored[scored["producer_id"] == producer_id]

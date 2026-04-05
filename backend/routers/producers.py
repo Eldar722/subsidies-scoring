@@ -2,12 +2,15 @@
 producers.py — эндпоинты производителей.
 Источник данных: Supabase (producers + scores + shap_values).
 Fallback на state.DF для applications/history (сырые заявки не хранятся в Supabase).
+
+Rate limits: READ_HEAVY (60/min), READ_LIGHT (120/min)
 """
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from cachetools import TTLCache
-from services.supabase_service import _get_client
+from core.rate_limits import limiter, READ_HEAVY, READ_LIGHT
+from services.supabase_service import _get_admin_client
 import core.state as state
 
 router = APIRouter()
@@ -22,53 +25,59 @@ _regions_cache = TTLCache(maxsize=1, ttl=300)
 
 def _fetch_all_scores_with_producers() -> list:
     """Получить все scores JOIN producers из Supabase (для list и map)."""
-    client = _get_client()
+    try:
+        client = _get_admin_client()
 
-    scores_resp = (
-        client.table("scores")
-        .select("producer_id, ml_score, ml_rank, fcfs_rank, delta, hidden_talent")
-        .limit(20000)
-        .execute()
-    )
-    scores = scores_resp.data or []
-    if not scores:
-        return []
-
-    pids = [s["producer_id"] for s in scores]
-
-    # Supabase IN-query лимит ~1000 элементов — батчим если надо
-    producers_map = {}
-    batch_size = 500
-    for i in range(0, len(pids), batch_size):
-        batch = pids[i:i + batch_size]
-        prod_resp = (
-            client.table("producers")
-            .select("producer_id, region, direction, total_applications, completion_rate")
-            .in_("producer_id", batch)
+        scores_resp = (
+            client.table("scores")
+            .select("producer_id, ml_score, ml_rank, fcfs_rank, delta, hidden_talent")
+            .limit(20000)
             .execute()
         )
-        for p in (prod_resp.data or []):
-            producers_map[p["producer_id"]] = p
+        scores = scores_resp.data or []
+        if not scores:
+            return []
 
-    result = []
-    for s in scores:
-        p = producers_map.get(s["producer_id"], {})
-        ml_score = s.get("ml_score") or 0
-        delta = s.get("delta") or 0
-        result.append({
-            "producer_id": s["producer_id"],
-            "ml_score": round(float(ml_score), 4),
-            "ml_rank": s.get("ml_rank"),
-            "fcfs_rank": s.get("fcfs_rank"),
-            "delta": delta,
-            "hidden_talent": bool(s.get("hidden_talent", False)),
-            "at_risk": int(delta) < -10,
-            "region": p.get("region"),
-            "direction": p.get("direction"),
-            "total_applications": p.get("total_applications"),
-            "completion_rate": p.get("completion_rate"),
-        })
-    return result
+        pids = [s["producer_id"] for s in scores]
+
+        # Supabase IN-query лимит ~1000 элементов — батчим если надо
+        producers_map = {}
+        batch_size = 500
+        for i in range(0, len(pids), batch_size):
+            batch = pids[i:i + batch_size]
+            prod_resp = (
+                client.table("producers")
+                .select("producer_id, region, direction, total_applications, completion_rate")
+                .in_("producer_id", batch)
+                .execute()
+            )
+            for p in (prod_resp.data or []):
+                producers_map[p["producer_id"]] = p
+
+        result = []
+        for s in scores:
+            p = producers_map.get(s["producer_id"], {})
+            ml_score = s.get("ml_score") or 0
+            delta = s.get("delta") or 0
+            result.append({
+                "producer_id": s["producer_id"],
+                "ml_score": round(float(ml_score), 4),
+                "ml_rank": s.get("ml_rank"),
+                "fcfs_rank": s.get("fcfs_rank"),
+                "delta": delta,
+                "hidden_talent": bool(s.get("hidden_talent", False)),
+                "at_risk": int(delta) < -10,
+                "region": p.get("region"),
+                "direction": p.get("direction"),
+                "total_applications": p.get("total_applications"),
+                "completion_rate": p.get("completion_rate"),
+            })
+        return result
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "invalid" in error_msg or "unauthorized" in error_msg or "api key" in error_msg:
+            print(f"[WARN] Supabase API key error in producers list: {e}")
+        raise
 
 
 def _get_all_items_cached() -> list:
@@ -76,14 +85,11 @@ def _get_all_items_cached() -> list:
     cache_key = "all_items"
     if cache_key in _regions_cache:
         return _regions_cache[cache_key]
-    try:
-        items = _fetch_all_scores_with_producers()
-        if items:
-            _regions_cache[cache_key] = items
-        return items
-    except Exception as e:
-        print(f"[WARN] Supabase producers fetch failed: {e}, fallback to in-memory")
-        return _fallback_all_items()
+    
+    items = _fetch_all_scores_with_producers()
+    if items:
+        _regions_cache[cache_key] = items
+    return items
 
 
 def _get_full_shortlist() -> dict:
@@ -116,7 +122,9 @@ def _fallback_all_items() -> list:
 # ---------------------------------------------------------------------------
 
 @router.get("/producers")
+@limiter.limit(READ_HEAVY)
 def producers_list(
+    request: Request,
     region: str = None,
     direction: str = None,
     talent_only: bool = False,
@@ -152,8 +160,15 @@ def producers_list(
 # ---------------------------------------------------------------------------
 
 @router.get("/producers/{producer_id}")
-def producer_detail(producer_id: str):
-    client = _get_client()
+@limiter.limit(READ_LIGHT)
+def producer_detail(request: Request, producer_id: str):
+    try:
+        client = _get_admin_client()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="Database connection failed. Check server logs."
+        )
 
     # 1. producers
     prod_resp = (
@@ -192,19 +207,19 @@ def producer_detail(producer_id: str):
         .execute()
     )
     shap_raw = shap_resp.data or []
-    # Сортируем по |shap_value|
-    shap_values = sorted(
-        [
-            {
-                "feature": r["feature"],
-                "shap_value": round(float(r["shap_value"]), 4),
-                "feature_label": r.get("feature_label") or r["feature"],
-            }
-            for r in shap_raw
-        ],
-        key=lambda x: abs(x["shap_value"]),
-        reverse=True,
-    )[:7]
+    # Дедуп по feature (старые дубликаты в БД до UNIQUE) — оставляем строку с max |shap_value|
+    by_feature = {}
+    for r in shap_raw:
+        feat = r["feature"]
+        sv = round(float(r["shap_value"]), 4)
+        row = {
+            "feature": feat,
+            "shap_value": sv,
+            "feature_label": r.get("feature_label") or feat,
+        }
+        if feat not in by_feature or abs(sv) > abs(by_feature[feat]["shap_value"]):
+            by_feature[feat] = row
+    shap_values = sorted(by_feature.values(), key=lambda x: abs(x["shap_value"]), reverse=True)[:7]
 
     # 4. applications + history из state.DF (сырые данные не хранятся в Supabase)
     applications = []
@@ -366,7 +381,8 @@ def _fallback_producer_detail(producer_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("/map/regions")
-def get_map_regions():
+@limiter.limit(READ_LIGHT)
+def get_map_regions(request: Request):
     cache_key = "map_regions"
     if cache_key in _regions_cache:
         return _regions_cache[cache_key]
