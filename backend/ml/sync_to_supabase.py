@@ -10,7 +10,6 @@ def _sync_producers_and_shap(df, model_data):
     """Producers + SHAP в Supabase после обучения (atomic via psycopg2)."""
     import core.state as state
     from ml.scoring import score_dataframe
-    from ml.feature_engineering import build_features
     from ml.shap_service import compute_shap
     from services.supabase_service import upsert_producers, upsert_shap
 
@@ -18,6 +17,7 @@ def _sync_producers_and_shap(df, model_data):
     state.MODEL_DATA = model_data
     state.DF = df
     state.GROUP_STATS = None
+    state.SHAP_EXPLAINER = None  # Force rebuild explainer for new model
 
     scored = score_dataframe(df)
     producers = scored.groupby("producer_id").agg(
@@ -30,6 +30,7 @@ def _sync_producers_and_shap(df, model_data):
     print(f"    ✓ Producers upserted: {len(producers)}")
 
     base_model = model_data["base_model"]
+    features = model_data["features"]
     resolved = df.dropna(subset=["target"]).copy()
     resolved["target"] = resolved["target"].astype(int)
     train = resolved[resolved["year"] == 2025].reset_index(drop=True)
@@ -37,14 +38,30 @@ def _sync_producers_and_shap(df, model_data):
         print("    [WARN] Нет строк 2025 для SHAP — пропуск")
         return
 
-    X_train = build_features(train, fit=True)
-    first_mask = train.index.isin(
-        train.groupby("producer_id").apply(lambda g: g.index[0]).values
-    )
-    X_first = X_train[first_mask].reset_index(drop=True)
-    pids_first = train[first_mask]["producer_id"].reset_index(drop=True)
+    # Use scored DataFrame — it already has ALL features (v7 = 32 features).
+    # Filter to 2025 resolved applications only.
+    scored_2025 = scored[
+        (scored["year"] == 2025) &
+        scored["target"].notna()
+    ].copy()
+
+    if len(scored_2025) == 0:
+        print("    [WARN] No 2025 resolved rows in scored — SHAP skip")
+        return
+
+    # Ensure all expected features exist (fill missing with 0)
+    for f in features:
+        if f not in scored_2025.columns:
+            scored_2025[f] = 0
+
+    # Take first row per producer (like training)
+    first_per_producer = scored_2025.groupby("producer_id").head(1)
+    X_first = first_per_producer[features].reset_index(drop=True)
+    pids_first = first_per_producer["producer_id"].reset_index(drop=True)
+
+    print(f"    SHAP for {len(X_first)} producers, {len(features)} features...")
     shap_data = compute_shap(base_model, X_first, pids_first, top_n=5)
-    
+
     # Atomic SHAP upsert via staging table
     upsert_shap(shap_data)
     print(f"    ✓ SHAP upserted (atomic): {len(shap_data)} rows")

@@ -94,9 +94,7 @@ export function Sidebar() {
                 }`
               }
               style={({ isActive }) =>
-                isActive
-                  ? {}
-                  : { color: 'var(--text-secondary)' }
+                isActive ? {} : { color: '#6b7280' }
               }
             >
               {({ isActive }) => (
@@ -107,10 +105,12 @@ export function Sidebar() {
                       style={{ background: 'var(--color-primary)' }}
                     />
                   )}
+                  {/* #7 Active: filled + blue; Inactive: medium-weight outline + gray */}
                   <Icon
                     size={16}
-                    weight={isActive ? 'fill' : 'regular'}
+                    weight={isActive ? 'fill' : 'bold'}
                     className="flex-shrink-0"
+                    style={{ color: isActive ? '#2563eb' : '#6b7280' }}
                   />
                   <span>{item.label}</span>
                 </>

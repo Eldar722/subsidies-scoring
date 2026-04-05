@@ -1,112 +1,53 @@
-# ===== SECRETS & ENVIRONMENT =====
+# ═══════════════════════════════════════════════════════════════
+# SubsidyLens — .gitignore
+# ═══════════════════════════════════════════════════════════════
+
+# ── SECRETS ──────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
 **/.env
-backend/.env
-frontend/.env.local
 
-# Model backups (created by atomic save)
+# ── LARGE BINARIES (не для git) ──────────────────────────────
+backend/model.pkl
 backend/model.pkl.bak
 backend/model.pkl.tmp
+backend/*.joblib
+backend/models/
+backend/data/subsidies.xlsx
+backend/data/*.parquet
+backend/data/*.csv
 
-# ===== PYTHON =====
+# ── RUNTIME / CACHES ─────────────────────────────────────────
+backend/logs/
+backend/json_cache/
+backend/_archive/
+backend/err*.txt
+backend/uv*.txt
+backend/out.txt
+
+# ── PYTHON ────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 env/
 venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+.venv/
 
-# Python testing
-.pytest_cache/
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-
-# ML/Data artifacts (models, data caches)
-backend/model.pkl
-backend/*.pkl
-backend/*.joblib
-backend/data/*.parquet
-backend/data/*.xlsx
-backend/data/*.csv
-backend/logs/
-
-# ===== NODE / NPM / FRONTEND =====
+# ── FRONTEND ─────────────────────────────────────────────────
 frontend/node_modules/
 frontend/dist/
-frontend/.dist/
-frontend/build/
-frontend/.env.local
-frontend/.env.staging.local
-frontend/.env.production.local
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
-frontend/.turbo
 
-# ===== IDE & EDITORS =====
-.vscode/
-.idea/
-.DS_Store
-.AppleDouble
-.LSOverride
-Thumbs.db
-*.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-.sublime-project
-.sublime-workspace
+# ── DOCS (only README and ARCHITECTURE) ──────────────────────
+*.md
+!README.md
+!ARCHITECTURE.md
 
-# ===== INTERNAL DOCUMENTATION =====
-# Claude AI planning files (not for git)
-CLAUDE.md
-.claude/
-PROMPT_SCAFFOLDING.md
-PLAN_*.md
-backend/CLAUDE.md
-backend/PLAN_*.md
-frontend/FRONTEND_PLAN.md
-
-# ===== SYSTEM & TEMPORARY =====
+# ── SYSTEM ───────────────────────────────────────────────────
 *.log
-*.logs
-.DS_Store
+*.sqlite3
 Thumbs.db
 desktop.ini
-*.sqlite3
-*.db
-
-# ===== VERCEL DEPLOYMENT =====
-.vercel/
-.vercel
-
-# ===== BUILD OUTPUT & CACHES =====
-dist/
-out/
-.next/
-build/
-*.swp
-*.swo
+.vscode/
+.idea/

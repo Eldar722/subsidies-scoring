@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion' // eslint-disable-line no-unused-vars
 import {
   DownloadSimple, Buildings, ListChecks, Star, TrendUp, X,
-  Play, SpinnerGap, CheckCircle, XCircle, Gauge, Warning,
+  Play, SpinnerGap, CheckCircle, Warning,
 } from '@phosphor-icons/react'
 import { getStats, getMetrics, runPipeline, getPipelineStatus, getDriftStatus } from '../services/api'
 import { useShortlist } from '../hooks/useShortlist'
@@ -127,11 +128,6 @@ function PipelineButton() {
     }
   }
 
-  useEffect(() => () => {
-    awaitingRunRef.current = false
-    stopAll()
-  }, [])
-
   const handleRun = async () => {
     try {
       awaitingRunRef.current = true
@@ -148,6 +144,16 @@ function PipelineButton() {
       showToast({ message: msg, type: 'error' })
     }
   }
+
+  useEffect(() => {
+    const handler = () => { if (!running) handleRun() }
+    document.addEventListener('pipeline:run', handler)
+    return () => {
+      awaitingRunRef.current = false
+      stopAll()
+      document.removeEventListener('pipeline:run', handler)
+    }
+  }, [running])
 
   return (
     <button
@@ -168,7 +174,7 @@ function PipelineButton() {
   )
 }
 
-// ── Drift Status Banner ──
+// ── Drift Status Banner — #2 stronger alert
 function DriftBanner() {
   const { data: drift } = useQuery({
     queryKey: ['drift-status'],
@@ -180,62 +186,94 @@ function DriftBanner() {
   const isWarning = drift.status === 'warning' || drift.status === 'critical'
   if (!isWarning) return null
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border text-xs font-medium bg-amber-50 border-amber-200 text-amber-800">
-      <Gauge size={14} className="text-amber-500 flex-shrink-0" weight="fill" />
-      <span>
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border text-xs font-medium bg-amber-50 border-amber-300 text-amber-900 alert-amber-dark">
+      {/* ⚠️ icon */}
+      <span className="text-xl flex-shrink-0" style={{ color: '#b45309' }}>⚠️</span>
+      <span className="font-semibold leading-relaxed">
         Дрифт модели обнаружен · {drift.low_confidence_pct?.toFixed(1)}% заявок с низкой уверенностью ·{' '}
-        <span className="font-semibold">Рекомендуется переобучение</span>
+        <span className="font-bold underline">Рекомендуется переобучение</span>
       </span>
+      {/* Drifted feature chips — #9 interactive */}
       {drift.drifted_features?.length > 0 && (
         <div className="ml-auto flex gap-1 flex-shrink-0">
           {drift.drifted_features.slice(0, 3).map(f => (
-            <span key={f} className="bg-amber-100 border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded-md text-[10px] font-semibold">{f}</span>
+            <span
+              key={f}
+              className="px-1.5 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors dark:bg-amber-900/30 dark:text-amber-400 dark:border dark:border-amber-700"
+              style={{ background: '#fef3c7', color: '#92400e' }}
+              title="Признак дрейфа модели"
+              onMouseEnter={e => { e.currentTarget.style.background = '#fde68a' }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#fef3c7' }}
+            >
+              {f}
+            </span>
           ))}
         </div>
       )}
+      {/* CTA button — dispatches event to trigger pipeline run */}
+      <button
+        onClick={() => {
+          document.dispatchEvent(new CustomEvent('pipeline:run'))
+        }}
+        className="ml-2 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-amber-500 text-amber-700 hover:bg-amber-100 transition-colors flex-shrink-0 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30"
+      >
+        <Play size={12} weight="fill" /> Переобучить сейчас
+      </button>
     </div>
   )
 }
 
-// ── Model Metrics strip ──
+// ── Model Metrics strip — #1 semantic color system
 function MetricsStrip() {
   const { data: metrics, refetch } = useQuery({ queryKey: ['metrics'], queryFn: getMetrics, staleTime: 5_000, gcTime: 60_000 })
   if (!metrics) return null
 
   const fcfs = metrics.vs_fcfs
+  // Semantic: good=green, warning=amber, neutral=blue, critical=red
   const items = [
-    { label: 'ROC-AUC', value: metrics.roc_auc?.toFixed(4), color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', desc: 'Hold-out 2026' },
-    { label: 'F1-Score', value: metrics.best_f1?.toFixed(4), color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100', desc: 'Лучший F1' },
-    { label: 'Precision', value: metrics.precision?.toFixed(4), color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100', desc: 'Точность' },
-    { label: 'Recall', value: metrics.recall?.toFixed(4), color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', desc: 'Полнота' },
-    { label: 'CV AUC', value: metrics.cv_auc_mean?.toFixed(4), color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', desc: 'Cross-val 2025' },
+    { label: 'ROC-AUC', value: metrics.roc_auc?.toFixed(4), semantic: metrics.roc_auc >= 0.72 ? 'good' : 'critical', desc: 'Hold-out 2026' },
+    { label: 'F1-Score', value: metrics.best_f1?.toFixed(4), semantic: 'good', desc: 'Лучший F1' },
+    { label: 'Precision', value: metrics.precision?.toFixed(4), semantic: 'neutral', desc: 'Точность' },
+    { label: 'Recall', value: metrics.recall?.toFixed(4), semantic: metrics.recall >= 0.80 ? 'warning' : 'critical', desc: 'Полнота' },
+    { label: 'CV AUC', value: metrics.cv_auc_mean?.toFixed(4), semantic: 'neutral', desc: 'Cross-val 2025' },
   ]
+
+  const SEMANTIC = {
+    good:      { text: 'text-[#16a34a]', bg: 'bg-green-50',   border: 'border-green-200',    accent: '#16a34a' },
+    warning:   { text: 'text-[#d97706]', bg: 'bg-amber-50',   border: 'border-amber-200',   accent: '#d97706' },
+    neutral:   { text: 'text-[#2563eb]', bg: 'bg-blue-50',    border: 'border-blue-200',    accent: '#2563eb' },
+    critical:  { text: 'text-[#dc2626]', bg: 'bg-red-50',     border: 'border-red-200',     accent: '#dc2626' },
+  }
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-5 gap-3">
-        {items.map(item => item.value && (
-          <div key={item.label} className={`${item.bg} border ${item.border} rounded-lg px-3 py-2.5`}>
-            <div className="text-[10px] text-slate-500 font-medium mb-0.5">{item.label}</div>
-            <div className={`text-base font-bold tabular-nums leading-none ${item.color}`}>{item.value}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">{item.desc}</div>
-          </div>
-        ))}
+        {items.map(item => {
+          if (!item.value) return null
+          const s = SEMANTIC[item.semantic]
+          return (
+            <div key={item.label} className={`metric-card-dark ${s.bg} border ${s.border} rounded-lg px-3 py-2.5`} style={{ borderLeftWidth: '3px', borderLeftColor: s.accent }}>
+              <div className="text-[10px] metric-label-dark font-medium mb-0.5">{item.label}</div>
+              <div className={`text-base font-bold tabular-nums leading-none metric-value-dark ${s.text}`}>{item.value}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{item.desc}</div>
+            </div>
+          )
+        })}
       </div>
       {fcfs && (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-green-200 bg-green-50 text-xs">
-          <CheckCircle size={14} className="text-green-600 flex-shrink-0" weight="fill" />
-          <span className="text-green-800 font-semibold">ML vs FCFS:</span>
-          <span className="text-green-700">
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border text-xs alert-green-dark">
+          <CheckCircle size={14} className="text-green-600 flex-shrink-0 dark:text-green-400" weight="fill" />
+          <span className="text-green-800 dark:text-green-300 font-semibold">ML vs FCFS:</span>
+          <span className="text-green-700 dark:text-green-400">
             F1 {fcfs.our_f1?.toFixed(2)} vs FCFS {fcfs.fcfs_f1?.toFixed(2)}
-            <span className="ml-1.5 font-bold text-green-600">{fcfs.improvement_f1}</span>
+            <span className="ml-1.5 font-bold text-green-600 dark:text-green-400">{fcfs.improvement_f1}</span>
           </span>
-          <span className="text-green-600 mx-1">·</span>
-          <span className="text-green-700">
+          <span className="text-green-600 dark:text-green-400 mx-1">·</span>
+          <span className="text-green-700 dark:text-green-400">
             AUC {fcfs.our_auc?.toFixed(2)} vs FCFS {fcfs.fcfs_auc?.toFixed(2)}
-            <span className="ml-1.5 font-bold text-green-600">{fcfs.improvement_auc}</span>
+            <span className="ml-1.5 font-bold text-green-600 dark:text-green-400">{fcfs.improvement_auc}</span>
           </span>
-          <span className="ml-auto text-[10px] text-green-600 font-medium">
+          <span className="ml-auto text-[10px] text-green-600 dark:text-green-400 font-medium">
             Temporal holdout 2026 · {metrics.hidden_talents_found ?? '—'} скрытых талантов
           </span>
         </div>
@@ -251,19 +289,31 @@ const KPI_CONFIG = [
   { key: 'score', label: 'Средний ML Score', icon: TrendUp, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
 ]
 
-const KPI_COLORS = {
-  producers: 'text-slate-900',
-  shortlist: 'text-green-600',
-  hidden: 'text-purple-600',
-  score: 'text-blue-600',
+// #4 semantic number colors for KPI values
+// Each number matches its icon block color
+const KPI_NUMBER = {
+  producers: 'text-[#475569] kpi-producers-num',  // slate-600 → matches slate icon bg
+  shortlist: 'text-[#16a34a]',  // green → matches green icon bg
+  hidden:    'text-[#7c3aed]',  // purple → matches purple icon bg
+  score:     'text-[#2563eb]',  // blue → matches blue icon bg
 }
 
 export default function DashboardPage() {
   const { showToast } = useToast()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [selectedId, setSelectedId] = useState(null)
-  const [regionFilter, setRegionFilter] = useState('')
-  const [dirFilter, setDirFilter] = useState('')
+  const [regionFilter, setRegionFilter] = useState(() => searchParams.get('region') || '')
+  const [dirFilter, setDirFilter] = useState(() => searchParams.get('direction') || '')
   const [hiddenOnly, setHiddenOnly] = useState(false)
+
+  // Apply URL query params to filters on mount
+  useEffect(() => {
+    const region = searchParams.get('region')
+    const direction = searchParams.get('direction')
+    if (region) setRegionFilter(region)
+    if (direction) setDirFilter(direction)
+  }, [searchParams])
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['stats'],
@@ -301,9 +351,11 @@ export default function DashboardPage() {
   if (shortlistError) {
     return (
       <div className="space-y-5 max-w-full animate-fade-in">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4 space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Метрики модели</h2>
+          <MetricsStrip />
           <PipelineButton />
+          <DriftBanner />
         </div>
         <ErrorState
           message="Сервер недоступен. Проверьте подключение к backend API."
@@ -329,21 +381,25 @@ export default function DashboardPage() {
         <DriftBanner />
       </div>
 
-      {/* KPI row */}
+      {/* KPI row — #4 semantic number colors */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {KPI_CONFIG.map((cfg) => {
           const Icon = cfg.icon
           return (
-            <div key={cfg.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md transition-shadow duration-200">
+            <div key={cfg.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md transition-shadow duration-200 kpi-card-dark">
               <div className="flex items-start justify-between mb-3">
-                <p className="text-xs text-slate-500 font-medium">{cfg.label}</p>
+                <p className="text-xs text-slate-500 font-medium kpi-label-dark">{cfg.label}</p>
                 <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center flex-shrink-0`}>
                   <Icon size={15} className={cfg.iconColor} weight="bold" />
                 </div>
               </div>
               {isLoading
                 ? <Skeleton className="h-8 w-20 mt-1" />
-                : <div className={`text-2xl font-extrabold tracking-tight ${KPI_COLORS[cfg.key]}`}>{kpiValues[cfg.key]}</div>
+                : (
+                  <div className={`text-2xl font-extrabold tracking-tight ${KPI_NUMBER[cfg.key]}`} title={cfg.key === 'hidden' ? 'Фиолетовый — особый статус: скрытые таланты требуют отдельного внимания комиссии' : undefined}>
+                    {kpiValues[cfg.key]}
+                  </div>
+                )
               }
             </div>
           )
@@ -352,17 +408,31 @@ export default function DashboardPage() {
 
       {/* Table card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2 flex-wrap bg-white">
-          <span className="text-sm font-semibold text-slate-800 mr-1">
-            {filtered.length < allProducers.length ? `${filtered.length} из ${allProducers.length}` : `${allProducers.length}`} производителей
-          </span>
-
-          <div className="flex items-center gap-2 flex-wrap flex-1">
+        {/* Toolbar — #8 unified filter bar */}
+        <div className="px-5 py-3.5 border-b border-slate-100 bg-white">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-sm font-semibold text-slate-800">
+              {filtered.length < allProducers.length ? `${filtered.length} из ${allProducers.length}` : `${allProducers.length}`} производителей
+            </span>
+            <button
+              onClick={() => { downloadCSV(filtered); showToast({ message: 'Экспорт завершён', type: 'success' }) }}
+              className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all duration-150"
+            >
+              <DownloadSimple size={13} /> CSV
+            </button>
+          </div>
+          {/* #8 Filter controls grouped in one unit */}
+          <div className="flex items-center gap-3 flex-wrap filter-bar-dark" style={{ background: '#f3f4f6', borderRadius: '8px', padding: '8px 12px' }}>
             <select
               value={regionFilter}
-              onChange={e => setRegionFilter(e.target.value)}
-              className="text-xs border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              onChange={e => {
+                setRegionFilter(e.target.value)
+                const params = new URLSearchParams(searchParams)
+                if (e.target.value) params.set('region', e.target.value)
+                else params.delete('region')
+                setSearchParams(params, { replace: true })
+              }}
+              className="text-xs border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors filter-dropdown-dark"
             >
               <option value="">Все регионы</option>
               {regions.map(r => <option key={r} value={r}>{r}</option>)}
@@ -370,8 +440,14 @@ export default function DashboardPage() {
 
             <select
               value={dirFilter}
-              onChange={e => setDirFilter(e.target.value)}
-              className="text-xs border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              onChange={e => {
+                setDirFilter(e.target.value)
+                const params = new URLSearchParams(searchParams)
+                if (e.target.value) params.set('direction', e.target.value)
+                else params.delete('direction')
+                setSearchParams(params, { replace: true })
+              }}
+              className="text-xs border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors filter-dropdown-dark"
             >
               <option value="">Все направления</option>
               {directions.map(d => <option key={d} value={d}>{d}</option>)}
@@ -390,26 +466,25 @@ export default function DashboardPage() {
 
             {hasFilters && (
               <button
-                onClick={() => { setRegionFilter(''); setDirFilter(''); setHiddenOnly(false) }}
+                onClick={() => {
+                  setRegionFilter('')
+                  setDirFilter('')
+                  setHiddenOnly(false)
+                  setSearchParams({}, { replace: true })
+                }}
                 className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-medium px-2 py-1 rounded-md hover:bg-slate-100 transition-colors"
               >
                 <X size={11} /> Сбросить
               </button>
             )}
           </div>
-
-          <button
-            onClick={() => { downloadCSV(filtered); showToast({ message: 'Экспорт завершён', type: 'success' }) }}
-            className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 ml-auto"
-          >
-            <DownloadSimple size={13} /> CSV
-          </button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
+              {/* #5 Table headers: 13px, 700, #374151, 1px bottom border */}
+              <tr className="bg-slate-50" style={{ borderBottom: '1px solid #e5e7eb' }}>
                 {[
                   { label: '#', w: 'w-10' },
                   { label: 'Производитель', w: 'w-36' },
@@ -420,7 +495,7 @@ export default function DashboardPage() {
                   { label: 'Delta ↕', w: 'w-20', title: 'FCFS ранг − ML ранг. Положительное = ML оценивает выше FCFS' },
                   { label: 'Статус', w: 'w-28' },
                 ].map(({ label, w, title }) => (
-                  <th key={label} title={title} className={`text-left px-4 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider ${w} ${title ? 'cursor-help' : ''}`}>
+                  <th key={label} title={title} className={`text-left px-4 py-2.5 ${w} ${title ? 'cursor-help' : ''}`} style={{ fontSize: '13px', fontWeight: 700, color: '#374151' }}>
                     {label}
                   </th>
                 ))}
@@ -441,8 +516,11 @@ export default function DashboardPage() {
                     : filtered.map((p, i) => (
                       <tr
                         key={p.producer_id}
-                        onClick={() => setSelectedId(p.producer_id)}
-                        className="hover:bg-blue-50/40 transition-colors duration-100 cursor-pointer"
+                        onClick={() => navigate(`/producer/${p.producer_id}`)}
+                        /* #6 Table row hover */
+                        className="cursor-pointer transition-[background] duration-150 table-row-hover-dark"
+                        onMouseEnter={e => { e.currentTarget.style.background = '' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '' }}
                       >
                         <td className="px-4 py-3.5 text-slate-300 text-xs tabular-nums">{i + 1}</td>
                         <td className="px-4 py-3.5 font-mono text-xs text-slate-800 font-semibold">{p.producer_id}</td>

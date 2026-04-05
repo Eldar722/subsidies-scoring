@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion' // eslint-disable-line no-unused-vars
 import { useSimulator } from '../hooks/useSimulator'
 import { Badge } from '../components/ui/Badge'
@@ -18,6 +19,7 @@ const initialWeights = Object.fromEntries(SLIDERS.map(s => [s.key, s.defaultValu
 const SLIDER_COLORS = ['#2563EB', '#7C3AED', '#059669', '#D97706', '#DC2626']
 
 export default function SimulatorPage() {
+  const navigate = useNavigate()
   const [weights, setWeights] = useState(initialWeights)
   const { simulate, data: simResult, isLoading } = useSimulator()
   const timerRef = useRef(null)
@@ -192,9 +194,10 @@ export default function SimulatorPage() {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 12 }}
                         transition={{ duration: 0.18 }}
-                        className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
+                        onClick={() => navigate(`/producer/${p.producer_id}`)}
+                        className={`px-5 py-3.5 flex items-center gap-3 transition-colors cursor-pointer ${
                           isEntered
-                            ? 'border-l-4 border-green-500 bg-green-50'
+                            ? 'border-l-4 border-green-500 bg-green-50 hover:bg-green-100'
                             : idx % 2 === 0
                               ? 'border-l-4 border-transparent bg-white hover:bg-slate-50'
                               : 'border-l-4 border-transparent bg-slate-50/60 hover:bg-slate-100/60'
@@ -223,7 +226,8 @@ export default function SimulatorPage() {
                   key={`left-${p.producer_id}`}
                   initial={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="px-5 py-3 flex items-center gap-3 border-l-4 border-red-300 bg-red-50 opacity-70"
+                  onClick={() => navigate(`/producer/${p.producer_id}`)}
+                  className="px-5 py-3 flex items-center gap-3 border-l-4 border-red-300 bg-red-50 opacity-70 cursor-pointer hover:opacity-100 transition-opacity"
                 >
                   <span className="text-xs text-slate-300 w-5">—</span>
                   <span className="font-mono text-xs text-slate-400 w-24 line-through">{p.producer_id}</span>

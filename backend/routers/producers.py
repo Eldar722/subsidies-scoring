@@ -197,17 +197,15 @@ def producer_detail(request: Request, producer_id: str):
             return _fallback_producer_detail(producer_id)
         raise HTTPException(404, f"Производитель {producer_id} не найден")
 
-    # 3. shap_values
+    # 3. shap_values — always return exactly 5 items sorted by |shap_value|
     shap_resp = (
         client.table("shap_values")
-        .select("feature, shap_value, feature_label")
+        .select("feature, shap_value, feature_label, feature_value")
         .eq("producer_id", producer_id)
-        .order("shap_value", desc=True)
-        .limit(7)
         .execute()
     )
     shap_raw = shap_resp.data or []
-    # Дедуп по feature (старые дубликаты в БД до UNIQUE) — оставляем строку с max |shap_value|
+    # Дедуп по feature — оставляем строку с max |shap_value|
     by_feature = {}
     for r in shap_raw:
         feat = r["feature"]
@@ -216,10 +214,12 @@ def producer_detail(request: Request, producer_id: str):
             "feature": feat,
             "shap_value": sv,
             "feature_label": r.get("feature_label") or feat,
+            "feature_value": r.get("feature_value", 0),
+            "raw_value": r.get("feature_value", 0),  # For tooltip
         }
         if feat not in by_feature or abs(sv) > abs(by_feature[feat]["shap_value"]):
             by_feature[feat] = row
-    shap_values = sorted(by_feature.values(), key=lambda x: abs(x["shap_value"]), reverse=True)[:7]
+    shap_values = sorted(by_feature.values(), key=lambda x: abs(x["shap_value"]), reverse=True)[:5]
 
     # 4. applications + history из state.DF (сырые данные не хранятся в Supabase)
     applications = []
@@ -374,6 +374,25 @@ def _fallback_producer_detail(producer_id: str) -> dict:
         "stats": stats,
         "shap_values": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /producers/{producer_id}/risk
+# ---------------------------------------------------------------------------
+
+@router.get("/producers/{producer_id}/risk")
+@limiter.limit(READ_LIGHT)
+def producer_risk(request: Request, producer_id: str):
+    """Advanced risk profile for a producer."""
+    if state.DF is None:
+        raise HTTPException(503, "Data not loaded")
+    try:
+        from ml.risk_indicators import compute_risk_profile
+        profile = compute_risk_profile(producer_id, state.DF)
+        return profile
+    except Exception as e:
+        print(f"[WARN] Risk profile failed: {e}")
+        return {"overall_risk": 0, "risk_level": "error", "signals": []}
 
 
 # ---------------------------------------------------------------------------

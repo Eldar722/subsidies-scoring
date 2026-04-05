@@ -1,6 +1,10 @@
 """
 drift.py — drift detection and confidence scoring.
 Rate limit: READ_LIGHT (120/min)
+
+Response adapters:
+  - /confidence/{id}: translates backend keys → frontend-expected keys
+  - /drift/status: adds `drifted_features` alias for frontend compat
 """
 
 from fastapi import APIRouter, HTTPException, Request, Query
@@ -43,7 +47,13 @@ def drift_status(request: Request):
     resolved["target"] = resolved["target"].astype(int)
     val = resolved[resolved["year"] == 2026].reset_index(drop=True)
     X_val = build_features(val, fit=False)
-    return compute_drift_status(X_val)
+    result = compute_drift_status(X_val)
+
+    # ── Frontend compatibility: drifted_features alias ──
+    result["drifted_features"] = [
+        item["feature"] for item in result.get("top_drift_features", []) if item.get("drifted", False)
+    ]
+    return result
 
 
 @router.get("/confidence/{producer_id}")
@@ -57,5 +67,28 @@ def producer_confidence(request: Request, producer_id: str):
     row = rows.iloc[0]
     x = row[FEATURES].values.astype(float)
     result = compute_confidence(x)
-    result["producer_id"] = producer_id
-    return result
+
+    # ── Adapt response for frontend compatibility ──
+    # Frontend reads: is_low_confidence, confidence_score, explanation, anomalous_features
+    # Backend returns: confidence, risk_level, reasons
+    anomalous = [r["feature"] for r in result.get("reasons", [])]
+    explanation_parts = [f"Confidence: {result['confidence']:.0%}"]
+    if result["risk_level"] == "low_confidence":
+        explanation_parts.append("Модель не уверена в этом прогнозе")
+    if anomalous:
+        explanation_parts.append(f"Аномальные признаки: {', '.join(anomalous)}")
+    elif result.get("reasons"):
+        for r in result["reasons"]:
+            explanation_parts.append(f"{r.get('feature', '?')}: {r.get('description', '')}")
+
+    return {
+        "producer_id": producer_id,
+        "is_low_confidence": result["risk_level"] == "low_confidence",
+        "confidence_score": result["confidence"],
+        "confidence": result["confidence"],  # Also keep original
+        "distance": result["distance"],
+        "risk_level": result["risk_level"],
+        "explanation": ". ".join(explanation_parts),
+        "anomalous_features": anomalous,
+        "reasons": result.get("reasons", []),  # Also keep original
+    }

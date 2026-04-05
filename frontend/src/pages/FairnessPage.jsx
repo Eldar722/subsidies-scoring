@@ -2,7 +2,7 @@ import { useFairness } from '../hooks/useFairness'
 import { LorenzChart } from '../components/charts/LorenzChart'
 import { Skeleton } from '../components/ui/Skeleton'
 import { CardHeader } from '../components/ui/Card'
-import { Scales, ChartBar, GitBranch, Polygon, MapPin, Table, Warning } from '@phosphor-icons/react'
+import { Scales, ChartBar, GitBranch, Polygon, MapPin, Table, Warning, Lightbulb, Info } from '@phosphor-icons/react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine,
@@ -17,17 +17,31 @@ function interpretGini(g) {
 function ZScoreTooltip({ active, payload }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
+  const absZ = Math.abs(d.z_score || 0)
+  const severity = absZ > 2 ? 'КРИТИЧЕСКОЕ' : absZ > 1.5 ? 'Сильное' : absZ > 1 ? 'Умеренное' : 'В норме'
+  const severityColor = absZ > 2 ? 'text-red-700' : absZ > 1.5 ? 'text-red-600' : absZ > 1 ? 'text-amber-600' : 'text-green-600'
+  const advice = absZ > 2
+    ? 'Рекомендуется: пересмотреть критерии оценки в регионе, проверить качество данных'
+    : absZ > 1.5
+      ? 'Рекомендуется: проанализировать региональные особенности'
+      : absZ > 1
+        ? 'Рекомендуется: мониторинг в следующем периоде'
+        : 'Регион работает в пределах нормы'
+
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-md text-xs">
+    <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-md text-xs max-w-[260px]">
       <p className="font-semibold text-slate-800 mb-1">{d.region}</p>
-      <p className="text-slate-500">
+      <p className="text-slate-500 mb-1">
         Z-score:{' '}
         <span className={Math.abs(d.z_score) > 1 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}>
           {d.z_score?.toFixed(2)}
         </span>
+        <span className={`ml-2 font-semibold ${severityColor}`}>({severity})</span>
       </p>
-      <p className="text-slate-400 mt-0.5">Ср. балл: {((d.avg_score || 0) * 100).toFixed(1)}%</p>
-      {d.is_outlier && <p className="text-red-500 font-medium mt-1.5">⚠ Систематическое отклонение</p>}
+      <p className="text-slate-400">Ср. балл: {((d.avg_score || 0) * 100).toFixed(1)}%</p>
+      <div className="mt-2 pt-2 border-t border-slate-100">
+        <p className="text-[10px] text-slate-500 leading-relaxed">{advice}</p>
+      </div>
     </div>
   )
 }
@@ -217,6 +231,14 @@ export default function FairnessPage() {
             p={kwRegion?.p_value?.toFixed(3) ?? '—'} · {kwRegion?.significant ? '⚠ Bias значим' : '✓ Однородно'}
           </div>
           <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">Тест: одинаков ли ML-балл по регионам?</p>
+          {kwRegion?.significant && kwRegion?.p_value < 0.001 && (
+            <div className="mt-2 p-2 bg-slate-50 rounded-md border border-slate-100">
+              <p className="text-[9px] text-slate-500 leading-relaxed">
+                <Info size={9} className="inline mr-1" weight="fill" />
+                При большом N даже малые различия становятся значимыми. Смотрите на эффект, а не только на p-value.
+              </p>
+            </div>
+          )}
         </MetricCard>
 
         <MetricCard icon={GitBranch} iconBg="bg-purple-100" iconColor="text-purple-600" label="Kruskal-Wallis — Направления" isLoading={isLoading}>
@@ -225,6 +247,14 @@ export default function FairnessPage() {
             p={kwDir?.p_value?.toFixed(3) ?? '—'} · {kwDir?.significant ? '⚠ Bias значим' : '✓ Однородно'}
           </div>
           <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">Тест: одинаков ли балл по видам животноводства?</p>
+          {kwDir?.significant && kwDir?.p_value < 0.001 && (
+            <div className="mt-2 p-2 bg-slate-50 rounded-md border border-slate-100">
+              <p className="text-[9px] text-slate-500 leading-relaxed">
+                <Info size={9} className="inline mr-1" weight="fill" />
+                Разные направления имеют разную экономику. Это ожидаемо.
+              </p>
+            </div>
+          )}
         </MetricCard>
       </div>
 
@@ -232,8 +262,20 @@ export default function FairnessPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Lorenz */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <CardHeader title="Кривая Лоренца" subtitle="Распределение субсидий по производителям" />
+          <CardHeader
+            title="Кривая Лоренца"
+            subtitle="Распределение субсидий по производителям"
+          />
           <div className="p-5">
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-blue-800 leading-relaxed">
+              <span className="font-semibold">Кривая Лоренца</span> показывает, насколько равномерно
+              распределены субсидии между производителями.
+              {' '}Если бы все получали поровну — это была бы <span className="font-semibold">линия равенства</span> (диагональ).
+              {' '}Чем больше кривая отклоняется от диагонали, тем <span className="font-semibold">неравномернее</span> распределение.
+              {' '}<br /><br />
+              <span className="font-semibold">Gini = 0</span> — полное равенство · <span className="font-semibold">Gini = 1</span> — всё одному производителю.
+              {' '}Текущий Gini: <strong>{gini?.toFixed(3) ?? '—'}</strong> ({giniInfo?.label ?? '—'} неравенство).
+            </div>
             {isLoading ? <Skeleton variant="chart" /> : <LorenzChart data={fairness?.lorenz_curve} />}
           </div>
         </div>

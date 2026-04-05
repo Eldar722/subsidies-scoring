@@ -29,11 +29,11 @@ if sys.platform == "win32":
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, GroupKFold
 from sklearn.metrics import (
     roc_auc_score, f1_score, classification_report,
     average_precision_score, precision_recall_curve,
-    precision_score, recall_score,
+    precision_score, recall_score, confusion_matrix,
 )
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from xgboost import XGBClassifier
@@ -73,6 +73,13 @@ FEATURES = [
     "sub_sr", "sub_vol", "sub_avg_amt",
     # Агрегаты: район (3)
     "dist_sr", "dist_vol", "dist_avg_amt",
+    # ═══ v7 — interaction & trend features ═══
+    # Financial × temporal interactions (3)
+    "month_amount_inter", "norm_per_app", "completion_trend",
+    # Behavioral patterns (3)
+    "app_frequency", "amount_consistency", "region_bias",
+    # Relative position (2)
+    "rel_amount_in_region", "rel_amount_in_direction",
 ]
 
 
@@ -359,41 +366,148 @@ def main():
     shift_stats = _log_distribution_shift(train_raw, val_raw)
 
     # ══════════════════════════════════════════════════════════════
-    # 4. АГРЕГАТЫ (из train, stable — deterministic fallback)
+    # 4. АГРЕГАТЫ (из ALL 2025 data incl unresolved — for better coverage)
     # ══════════════════════════════════════════════════════════════
-    def build_group_stats(train_df, df_to_enrich, group_col, prefix):
-        """Compute group stats on train, merge into df_to_enrich. Deterministic fallback."""
-        stats = train_df.groupby(group_col).agg(
+    #
+    # SAFETY: success_rate вычисляется ТОЛЬКО на resolved (target not NaN).
+    # Но volume и avg_amount — на ВСЕХ 2025 записях (включая незавершённые).
+    # Это улучшает coverage group features для 2026 producers.
+    # NO LEAKAGE: не используем target из 2026.
+    # ══════════════════════════════════════════════════════════════
+    def build_group_stats(all_train_df, resolved_train_df, df_to_enrich, group_col, prefix):
+        """Compute group stats on ALL 2025 data (for coverage) + resolved (for success_rate).
+
+        - success_rate: только на resolved (целевая, без leakage)
+        - volume, avg_amount: на ВСЕХ записях 2025 (лучше покрытие)
+        """
+        # success_rate — только на resolved
+        stats_sr = resolved_train_df.groupby(group_col).agg(
             success_rate=("target", "mean"),
-            volume=("target", "count"),
+        ).reset_index()
+
+        # volume, avg_amount — на ВСЕХ 2025 записях
+        stats_vol = all_train_df.groupby(group_col).agg(
+            volume=("Причитающая сумма", "count"),
             avg_amount=("Причитающая сумма", "mean"),
         ).reset_index()
+
+        stats = stats_sr.merge(stats_vol, on=group_col, how="outer")
         stats.columns = [group_col, f"{prefix}_sr", f"{prefix}_vol", f"{prefix}_avg_amt"]
         enriched = df_to_enrich.merge(stats, on=group_col, how="left")
-        
-        # Deterministic fallback values (not random, not NaN-dependent)
-        global_sr = float(train_df["target"].mean())
+
+        # Deterministic fallback values
+        global_sr = float(resolved_train_df["target"].mean())
         median_vol = float(stats[f"{prefix}_vol"].median())
         median_amt = float(stats[f"{prefix}_avg_amt"].median())
-        
+
         enriched[f"{prefix}_sr"] = enriched[f"{prefix}_sr"].fillna(global_sr)
         enriched[f"{prefix}_vol"] = enriched[f"{prefix}_vol"].fillna(median_vol)
         enriched[f"{prefix}_avg_amt"] = enriched[f"{prefix}_avg_amt"].fillna(median_amt)
         return enriched
 
-    print("\n🛡️  Агрегаты по region / direction / subsidy / district (train only)...")
+    # ALL 2025 data (включая незавершённые) — для улучшения coverage
+    train_all_2025 = df[df["year"] == 2025].copy()
 
-    train_e = build_group_stats(train_raw, train_raw, "Область", "reg")
-    val_e   = build_group_stats(train_raw, val_raw,   "Область", "reg")
+    print("\n🛡️  Агрегаты по region / direction / subsidy / district (ALL 2025 incl unresolved)...")
 
-    train_e = build_group_stats(train_raw, train_e, "Направление водства", "dir")
-    val_e   = build_group_stats(train_raw, val_e,   "Направление водства", "dir")
+    train_e = build_group_stats(train_all_2025, train_raw, train_raw, "Область", "reg")
+    val_e   = build_group_stats(train_all_2025, train_raw, val_raw,   "Область", "reg")
 
-    train_e = build_group_stats(train_raw, train_e, "Наименование субсидирования", "sub")
-    val_e   = build_group_stats(train_raw, val_e,   "Наименование субсидирования", "sub")
+    train_e = build_group_stats(train_all_2025, train_raw, train_e, "Направление водства", "dir")
+    val_e   = build_group_stats(train_all_2025, train_raw, val_e,   "Направление водства", "dir")
 
-    train_e = build_group_stats(train_raw, train_e, "Район хозяйства", "dist")
-    val_e   = build_group_stats(train_raw, val_e,   "Район хозяйства", "dist")
+    train_e = build_group_stats(train_all_2025, train_raw, train_e, "Наименование субсидирования", "sub")
+    val_e   = build_group_stats(train_all_2025, train_raw, val_e,   "Наименование субсидирования", "sub")
+
+    train_e = build_group_stats(train_all_2025, train_raw, train_e, "Район хозяйства", "dist")
+    val_e   = build_group_stats(train_all_2025, train_raw, val_e,   "Район хозяйства", "dist")
+
+    # ══════════════════════════════════════════════════════════════
+    # 4b. v7 INTERACTION & TREND FEATURES (train only — no leakage)
+    # ══════════════════════════════════════════════════════════════
+    print("\n🛡️  v7 — Interaction & behavioral features (train only)...")
+
+    # Per-producer aggregates (computed on train, applied to both)
+    producer_stats = train_raw.groupby("producer_id").agg(
+        app_count=("target", "count"),
+        app_completion=("target", "mean"),
+        avg_amount_producer=("Причитающая сумма", "mean"),
+        std_amount_producer=("Причитающая сумма", "std"),
+    ).reset_index()
+    producer_stats["std_amount_producer"] = producer_stats["std_amount_producer"].fillna(0)
+    producer_stats["amount_cv"] = producer_stats["std_amount_producer"] / (
+        producer_stats["avg_amount_producer"].replace(0, np.nan)
+    )
+    producer_stats["amount_cv"] = producer_stats["amount_cv"].fillna(0).clip(upper=5)
+
+    train_e = train_e.merge(producer_stats, on="producer_id", how="left")
+    val_e = val_e.merge(producer_stats, on="producer_id", how="left")
+
+    # Global fallback for unseen producers
+    global_app_count = float(train_raw["producer_id"].value_counts().median())
+    global_completion = float(train_raw["target"].mean())
+    global_avg_amount = float(train_raw["Причитающая сумма"].median())
+    global_amount_cv = float(producer_stats["amount_cv"].median())
+
+    for col, fallback in [
+        ("app_count", global_app_count),
+        ("app_completion", global_completion),
+        ("avg_amount_producer", global_avg_amount),
+        ("amount_cv", global_amount_cv),
+    ]:
+        train_e[col] = train_e[col].fillna(fallback)
+        val_e[col] = val_e[col].fillna(fallback)
+
+    # month × amount interaction
+    train_e["month_amount_inter"] = train_e["month"] * train_e["log_amount"]
+    val_e["month_amount_inter"]   = val_e["month"] * val_e["log_amount"]
+
+    # Norm per application (normalized)
+    train_e["norm_per_app"] = train_e["Норматив"] / train_e["app_count"].replace(0, np.nan)
+    val_e["norm_per_app"]   = val_e["Норматив"] / val_e["app_count"].replace(0, np.nan)
+    for dset in [train_e, val_e]:
+        med = train_e["norm_per_app"].median()
+        dset["norm_per_app"] = dset["norm_per_app"].fillna(med).clip(upper=1e6)
+
+    # Completion trend: producer's completion rate vs their region's average
+    train_e["completion_trend"] = train_e["app_completion"] - train_e["reg_sr"]
+    val_e["completion_trend"]   = val_e["app_completion"] - val_e["reg_sr"]
+
+    # Application frequency: log(app_count + 1)
+    train_e["app_frequency"] = np.log1p(train_e["app_count"])
+    val_e["app_frequency"]   = np.log1p(val_e["app_count"])
+
+    # Amount consistency (1 / (CV + 1)) — higher = more consistent amounts
+    train_e["amount_consistency"] = 1.0 / (train_e["amount_cv"] + 1.0)
+    val_e["amount_consistency"]   = 1.0 / (val_e["amount_cv"] + 1.0)
+
+    # Region bias: is this producer from an over/under-subsidized region?
+    train_e["region_bias"] = train_e["reg_sr"] - global_completion
+    val_e["region_bias"]   = val_e["reg_sr"] - global_completion
+
+    # Relative amount within region
+    train_e["rel_amount_in_region"] = train_e["Причитающая сумма"] / (
+        train_e["reg_avg_amt"].replace(0, np.nan)
+    )
+    val_e["rel_amount_in_region"] = val_e["Причитающая сумма"] / (
+        val_e["reg_avg_amt"].replace(0, np.nan)
+    )
+    for dset in [train_e, val_e]:
+        med = train_e["rel_amount_in_region"].median()
+        dset["rel_amount_in_region"] = dset["rel_amount_in_region"].fillna(med).clip(upper=10)
+
+    # Relative amount within direction
+    train_e["rel_amount_in_direction"] = train_e["Причитающая сумма"] / (
+        train_e["dir_avg_amt"].replace(0, np.nan)
+    )
+    val_e["rel_amount_in_direction"] = val_e["Причитающая сумма"] / (
+        val_e["dir_avg_amt"].replace(0, np.nan)
+    )
+    for dset in [train_e, val_e]:
+        med = train_e["rel_amount_in_direction"].median()
+        dset["rel_amount_in_direction"] = dset["rel_amount_in_direction"].fillna(med).clip(upper=10)
+
+    print(f"   ✓ Added {len(FEATURES) - 24} new features (total: {len(FEATURES)})")
 
     # ══════════════════════════════════════════════════════════════
     # 5. ENCODE + STABLE NaN FILL
@@ -452,17 +566,18 @@ def main():
     # 7. MODEL DEFINITION (deterministic — fixed seed)
     # ══════════════════════════════════════════════════════════════
 
-    def _xgb_base(n_trees: int, early_stop: int | None) -> XGBClassifier:
+    def _xgb_base(n_trees: int, early_stop: int | None, sample_weight=None) -> XGBClassifier:
         kw = dict(
             n_estimators=n_trees,
-            max_depth=5,
-            learning_rate=0.045,
-            min_child_weight=4,
-            subsample=0.82,
-            colsample_bytree=0.82,
-            reg_lambda=2.0,
-            reg_alpha=0.05,
-            gamma=0.15,
+            max_depth=4,              # v7: reduced from 5 → less overfitting
+            learning_rate=0.03,       # v7: reduced from 0.045 → more stable
+            min_child_weight=6,       # v7: increased from 4 → more conservative
+            subsample=0.75,           # v7: reduced from 0.82 → more regularization
+            colsample_bytree=0.70,    # v7: reduced from 0.82 → fewer features per tree
+            colsample_bylevel=0.80,   # v7: new — additional feature sampling
+            reg_lambda=3.5,           # v7: increased from 2.0 → stronger L2
+            reg_alpha=0.15,           # v7: increased from 0.05 → stronger L1
+            gamma=0.25,               # v7: increased from 0.15 → more conservative splits
             scale_pos_weight=scale_pos_weight,
             random_state=SEED,
             n_jobs=-1,
@@ -476,24 +591,42 @@ def main():
     model_config = _xgb_base(1, None).get_params()
 
     # ══════════════════════════════════════════════════════════════
-    # 8. CROSS-VALIDATION (5-fold, deterministic shuffle)
+    # 8. CROSS-VALIDATION (GroupKFold by producer_id — no leakage)
     # ══════════════════════════════════════════════════════════════
-    print("\n🔄 5-Fold CV на 2025 данных (XGBoost)...")
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    print("\n🔄 GroupKFold CV на 2025 данных (XGBoost) — без leakage через producer_id...")
+
+    # GroupKFold: все строки одного producer в train ИЛИ в test
+    groups = train_e["producer_id"].values
+    gkf = GroupKFold(n_splits=5)
     cv_aucs, cv_f1s = [], []
 
-    for fold, (tr_idx, te_idx) in enumerate(skf.split(X_train, y_train), 1):
+    # Time-decay sample weights для CV
+    # Более поздние заявки 2025 получают больший вес → ближе к 2026 паттернам
+    if "date" in train_e.columns:
+        dates_numeric = pd.to_numeric(train_e["date"])
+        min_d, max_d = dates_numeric.min(), dates_numeric.max()
+        if max_d > min_d:
+            time_decay = (0.5 + 0.5 * (dates_numeric - min_d) / (max_d - min_d)).astype(np.float32)
+        else:
+            time_decay = np.ones(len(train_e), dtype=np.float32)
+    else:
+        time_decay = np.ones(len(train_e), dtype=np.float32)
+
+    for fold, (tr_idx, te_idx) in enumerate(gkf.split(X_train, y_train, groups), 1):
         Xtr, Xte = X_train.iloc[tr_idx], X_train.iloc[te_idx]
         ytr, yte = y_train.iloc[tr_idx], y_train.iloc[te_idx]
+        wtr = time_decay[tr_idx]
 
         m = _xgb_base(n_trees=450, early_stop=None)
-        m.fit(Xtr.values, ytr.values, verbose=False)
+        m.fit(Xtr.values, ytr.values, sample_weight=wtr, verbose=False)
         p = m.predict_proba(Xte.values)[:, 1]
         a = roc_auc_score(yte, p)
         f = f1_score(yte, (p >= 0.5).astype(int))
         cv_aucs.append(a)
         cv_f1s.append(f)
-        print(f"   Fold {fold}: AUC={a:.4f}  F1={f:.4f}")
+        n_train_producers = len(set(groups[tr_idx]))
+        n_test_producers = len(set(groups[te_idx]))
+        print(f"   Fold {fold}: AUC={a:.4f}  F1={f:.4f}  (train producers: {n_train_producers}, test: {n_test_producers})")
 
     cv_auc_mean = float(np.mean(cv_aucs))
     cv_auc_std = float(np.std(cv_aucs))
@@ -501,9 +634,9 @@ def main():
     print(f"   ── Mean CV F1 : {np.mean(cv_f1s):.4f} ± {np.std(cv_f1s):.4f}")
 
     # ══════════════════════════════════════════════════════════════
-    # 9. FINAL MODEL TRAINING
+    # 9. FINAL MODEL TRAINING (с time-decay weighting)
     # ══════════════════════════════════════════════════════════════
-    print("\n🚀 Обучение финальной модели (XGBoost + early stopping по времени)...")
+    print("\n🚀 Обучение финальной модели (XGBoost + early stopping + time-decay)...")
     train_ord = train_e.sort_values("date").reset_index(drop=True)
     X_ord = train_ord[FEATURES].astype(np.float64).fillna(0.0)
     y_ord = train_ord["target"].astype(int)
@@ -512,9 +645,18 @@ def main():
     X_fit, X_es = X_ord.iloc[:cut], X_ord.iloc[cut:]
     y_fit, y_es = y_ord.iloc[:cut], y_ord.iloc[cut:]
 
+    # Time-decay weights для training (float32 для sklearn calibration)
+    dates_fit = pd.to_numeric(train_ord.iloc[:cut]["date"])
+    min_d_fit, max_d_fit = dates_fit.min(), dates_fit.max()
+    if max_d_fit > min_d_fit:
+        w_fit = (0.5 + 0.5 * (dates_fit - min_d_fit) / (max_d_fit - min_d_fit)).astype(np.float32)
+    else:
+        w_fit = np.ones(len(dates_fit), dtype=np.float32)
+
     es_model = _xgb_base(n_trees=900, early_stop=55)
     es_model.fit(
         X_fit.values, y_fit.values,
+        sample_weight=w_fit,
         eval_set=[(X_es.values, y_es.values)],
         verbose=False,
     )
@@ -526,12 +668,12 @@ def main():
     print(f"   выбрано деревьев: {n_final} (best_iteration={best_it})")
 
     base_model = _xgb_base(n_trees=n_final, early_stop=None)
-    base_model.fit(X_train.values, y_train.values, verbose=False)
+    base_model.fit(X_train.values, y_train.values, sample_weight=time_decay, verbose=False)
 
-    # Калибровка
-    print("   Калибровка (isotonic, 3-fold)...")
-    model = CalibratedClassifierCV(base_model, method="isotonic", cv=3)
-    model.fit(X_train.values, y_train.values)
+    # Калибровка — sigmoid более робастный к distribution shift чем isotonic
+    print("   Калибровка (sigmoid, 3-fold, time-decay)...")
+    model = CalibratedClassifierCV(base_model, method="sigmoid", cv=3)
+    model.fit(X_train.values, y_train.values, sample_weight=time_decay)
 
     # ══════════════════════════════════════════════════════════════
     # 10. HOLD-OUT EVALUATION
@@ -569,6 +711,20 @@ def main():
         print(f"\n  Classification Report (порог={best_thr:.3f}):")
         print(classification_report(y_val, pred_opt,
               target_names=["Отклон./Отозв.", "Исполнена"]))
+
+        # Confusion Matrix
+        cm = confusion_matrix(y_val, pred_opt)
+        tn, fp, fn, tp = cm.ravel()
+        print(f"\n  Confusion Matrix (порог={best_thr:.3f}):")
+        print(f"  ┌──────────────┬──────────┬──────────┐")
+        print(f"  │              │ Pred −   │ Pred +   │")
+        print(f"  ├──────────────┼──────────┼──────────┤")
+        print(f"  │ Actual − (TN)│ {tn:>8} │ {fp:>8} │  FP={fp}")
+        print(f"  │ Actual + (TP)│ {fn:>8} │ {tp:>8} │  FN={fn}")
+        print(f"  └──────────────┴──────────┴──────────┘")
+        print(f"  Accuracy : {(tp+tn)/(tp+tn+fp+fn):.4f}")
+        print(f"  Precision: {tp/(tp+fp):.4f}" if (tp+fp) > 0 else "  Precision: N/A")
+        print(f"  Recall   : {tp/(tp+fn):.4f}" if (tp+fn) > 0 else "  Recall: N/A")
 
     # Калибровка
     print("📉 Калибровка:")
@@ -624,7 +780,28 @@ def main():
 
     # Model versioning: v{major}.{minor}.{patch}
     model_version = _compute_model_version(auc)
-    artifact["reproducibility"]["model_version"] = model_version
+
+    def _sanitize_for_json(val):
+        """Convert numpy NaN/inf to None for safe JSON serialization."""
+        if val is None:
+            return None
+        if isinstance(val, (float, np.floating)):
+            if np.isnan(val) or np.isinf(val):
+                return None
+        return val
+
+    def _sanitize_config(cfg):
+        """Sanitize model config for JSON/JSONB storage."""
+        cleaned = {}
+        for k, v in cfg.items():
+            if isinstance(v, (int, float, bool, type(None))):
+                cleaned[k] = _sanitize_for_json(v)
+            elif isinstance(v, np.floating):
+                cleaned[k] = _sanitize_for_json(float(v))
+            else:
+                cleaned[k] = str(v)
+        # Double-check: serialize and parse back to guarantee no NaN
+        return json.loads(json.dumps(cleaned, allow_nan=False))
 
     artifact = {
         "model": model,
@@ -637,6 +814,15 @@ def main():
         },
         "optimal_threshold": best_thr,
         "train_medians": train_medians,  # For consistent inference (same as training)
+        "producer_stats": {
+            "df": producer_stats.to_dict(orient="list"),
+            "fallbacks": {
+                "app_count": global_app_count,
+                "app_completion": global_completion,
+                "avg_amount_producer": global_avg_amount,
+                "amount_cv": global_amount_cv,
+            }
+        },
         "metrics": {
             "roc_auc": float(auc),
             "avg_precision": float(ap),
@@ -654,8 +840,8 @@ def main():
             "seed": SEED,
             "feature_list_version": _feature_list_version(FEATURES),
             "dataset_hash": ds_hash,
-            "model_config": {k: str(v) if not isinstance(v, (int, float, bool, type(None))) else v
-                            for k, v in model_config.items()},
+            "model_version": model_version,
+            "model_config": _sanitize_config(model_config),
             "training_timestamp": datetime.now(timezone.utc).isoformat(),
             "python_version": sys.version.split()[0],
             "xgboost_version": xgb.__version__,
@@ -723,6 +909,29 @@ def main():
         print("\n⚠️ WARNING: Frontend будет показывать устаревшие данные")
 
 
+def _sanitize_for_json(val):
+    """Convert numpy NaN/inf to None for safe JSON serialization."""
+    if val is None:
+        return None
+    if isinstance(val, (float, np.floating)):
+        if np.isnan(val) or np.isinf(val):
+            return None
+    return val
+
+
+def _sanitize_config(cfg):
+    """Sanitize model config for JSON/JSONB storage."""
+    cleaned = {}
+    for k, v in cfg.items():
+        if isinstance(v, (int, float, bool, type(None))):
+            cleaned[k] = _sanitize_for_json(v)
+        elif isinstance(v, np.floating):
+            cleaned[k] = _sanitize_for_json(float(v))
+        else:
+            cleaned[k] = str(v)
+    return json.loads(json.dumps(cleaned, allow_nan=False))
+
+
 def _save_training_metrics(*, auc, ap, best_f1, best_thr, prec_t, rec_t,
                            cv_auc_mean, cv_auc_std, ds_hash, shift_stats,
                            model_config, gate_passed, train_size, val_size):
@@ -752,8 +961,7 @@ def _save_training_metrics(*, auc, ap, best_f1, best_thr, prec_t, rec_t,
             "feature_count": len(FEATURES),
         },
         "distribution_shift": shift_stats,
-        "model_config": {k: str(v) if not isinstance(v, (int, float, bool, type(None))) else v
-                        for k, v in model_config.items()},
+        "model_config": _sanitize_config(model_config),
     }
 
     path = "logs/training_metrics.json"

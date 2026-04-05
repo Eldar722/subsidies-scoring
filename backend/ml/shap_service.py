@@ -8,44 +8,55 @@ import pandas as pd
 import shap
 
 FEATURE_LABELS = {
-    "month": "Месяц подачи",
-    "hour": "Час подачи",
-    "day_of_year": "День года",
-    "day_of_week": "День недели",
+    "month": "Месяц подачи заявки",
+    "hour": "Час подачи заявки",
+    "day_of_year": "День года подачи",
+    "day_of_week": "День недели подачи",
     "Норматив": "Норматив субсидии",
-    "Причитающая сумма": "Причитающая сумма",
-    "amount_to_norm": "Отношение суммы к нормативу",
-    "log_amount": "Сумма субсидии (лог)",
-    "log_norm": "Норматив (лог)",
-    "region_enc": "Регион",
-    "direction_enc": "Направление",
-    "subsidy_enc": "Тип субсидии",
+    "Причитающая сумма": "Сумма субсидии",
+    "amount_to_norm": "Сумма относительно норматива",
+    "log_amount": "Логарифм суммы субсидии",
+    "log_norm": "Логарифм норматива",
+    "region_enc": "Код региона",
+    "direction_enc": "Код направления",
+    "subsidy_enc": "Код типа субсидии",
     "reg_sr": "Успешность в регионе",
-    "reg_vol": "Объём заявок в регионе",
+    "reg_vol": "Число заявок в регионе",
     "reg_avg_amt": "Средняя сумма в регионе",
     "dir_sr": "Успешность по направлению",
-    "dir_vol": "Объём по направлению",
+    "dir_vol": "Число заявок по направлению",
     "dir_avg_amt": "Средняя сумма по направлению",
     "sub_sr": "Успешность по типу субсидии",
-    "sub_vol": "Объём по типу субсидии",
+    "sub_vol": "Число заявок по типу субсидии",
     "sub_avg_amt": "Средняя сумма по типу субсидии",
     "dist_sr": "Успешность в районе",
-    "dist_vol": "Объём заявок в районе",
+    "dist_vol": "Число заявок в районе",
     "dist_avg_amt": "Средняя сумма в районе",
+    # ═══ v7 features ═══
+    "month_amount_inter": "Месяц × Сумма (взаимосвязь)",
+    "norm_per_app": "Норматив на заявку",
+    "completion_trend": "Отклонение от региональной успешности",
+    "app_frequency": "Частота подачи заявок (log)",
+    "amount_consistency": "Стабильность сумм заявок",
+    "region_bias": "Смещение региона от среднего",
+    "rel_amount_in_region": "Сумма относительно региона",
+    "rel_amount_in_direction": "Сумма относительно направления",
+    # Producer-level features
+    "app_count": "Количество заявок производителя",
+    "app_completion": "Доля исполненных заявок",
+    "avg_amount_producer": "Средняя сумма заявок",
+    "amount_cv": "Вариация сумм (CV)",
 }
 
 
 def compute_shap(base_model, X, producer_ids, top_n=5):
     """Вычислить SHAP values и вернуть топ-N признаков на каждого производителя.
 
-    Args:
-        base_model: GradientBoostingClassifier (не калиброванный).
-        X: DataFrame с features.
-        producer_ids: Series/list producer_id, соответствующий строкам X.
-        top_n: сколько топ-признаков вернуть на производителя.
-
-    Returns:
-        list[dict] — [{producer_id, feature, shap_value, feature_value, feature_label}, ...]
+    Улучшенная логика выбора топ-факторов:
+    - Используем |SHAP value| для ранжирования (сила влияния, не направление)
+    - Фильтруем слабые признаки (|SHAP| < 0.001)
+    - Минимум top_n признаков, даже если некоторые слабые
+    - Уникальные feature_label для каждого производителя
     """
     # Use precomputed explainer if available (avoids ~200ms construction on every request)
     try:
@@ -61,9 +72,32 @@ def compute_shap(base_model, X, producer_ids, top_n=5):
     features = list(X.columns)
     results = []
 
+    # Compute global median |SHAP| to filter weak features
+    median_abs_shap = np.median(np.abs(shap_values), axis=0)
+    weak_threshold = max(0.001, np.percentile(median_abs_shap, 25))  # bottom 25% are weak
+
     for i, pid in enumerate(producer_ids):
         vals = shap_values[i]
-        top_idx = np.argsort(np.abs(vals))[-top_n:][::-1]
+        abs_vals = np.abs(vals)
+
+        # Sort by absolute SHAP value (strongest first)
+        sorted_idx = np.argsort(abs_vals)[::-1]
+
+        # Filter weak features for THIS producer
+        strong_idx = [idx for idx in sorted_idx if abs_vals[idx] >= weak_threshold]
+
+        # Take top_n strong features, or fall back to top_n overall if not enough strong
+        if len(strong_idx) >= top_n:
+            top_idx = strong_idx[:top_n]
+        else:
+            # Mix: all strong + fill with next strongest
+            top_idx = list(strong_idx)
+            for idx in sorted_idx:
+                if len(top_idx) >= top_n:
+                    break
+                if idx not in top_idx:
+                    top_idx.append(idx)
+            top_idx = top_idx[:top_n]
 
         for idx in top_idx:
             feat = features[idx]
@@ -73,6 +107,7 @@ def compute_shap(base_model, X, producer_ids, top_n=5):
                 "shap_value": round(float(vals[idx]), 4),
                 "feature_value": round(float(X.iloc[i, idx]), 4),
                 "feature_label": FEATURE_LABELS.get(feat, feat),
+                "abs_shap": round(float(abs_vals[idx]), 4),  # For UI sorting
             })
 
     return results

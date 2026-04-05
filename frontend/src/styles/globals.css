@@ -10,10 +10,10 @@
   --color-primary:        #2563EB;
   --color-primary-hover:  #1D4ED8;
 
-  /* Surfaces */
-  --color-bg:             #EDEEF6;
-  --color-surface:        #FFFFFF;
-  --color-surface-2:      #E8EAF4;
+  /* Surfaces — v7: softer, less harsh white */
+  --color-bg:             #F1F3F8;
+  --color-surface:        #F8F9FC;
+  --color-surface-2:      #EDF0F7;
   --color-accent:         #DBEAFE;
 
   /* Borders */
@@ -262,6 +262,63 @@ input[type="range"]::-moz-range-thumb {
 .dark .nav-item-active {
   background: #172038;
   color:      #60A5FA;
+}
+
+/* ─── Dark Theme — Dashboard-specific overrides ─────────────── */
+
+/* #1 Metric cards — dark navy, no colored left borders, white values */
+.dark .metric-card-dark {
+  background-color: #1e2130 !important;
+  border-color: #2a2d3e !important;
+  border-left: none !important;
+}
+.dark .metric-value-dark {
+  color: #ffffff !important;
+}
+.dark .metric-label-dark {
+  color: #6b7280 !important;
+}
+
+/* #2 Alert banners — dark-safe colors */
+.dark .alert-green-dark {
+  background-color: #052e16 !important;
+  border-color: #166534 !important;
+  color: #4ade80 !important;
+}
+.dark .alert-amber-dark {
+  background-color: #1c1a07 !important;
+  border-color: #854d0e !important;
+  color: #fbbf24 !important;
+}
+
+/* #3 Summary / KPI cards — dark */
+.dark .kpi-card-dark {
+  background-color: #1e2130 !important;
+  border-color: #2a2d3e !important;
+}
+.dark .kpi-label-dark {
+  color: #9ca3af !important;
+}
+
+/* #4 Table row hover — dark-safe */
+.dark .table-row-hover-dark:hover {
+  background-color: #252840 !important;
+}
+
+/* KPI producers number — dark override (slate-600 is invisible on dark bg) */
+.dark .kpi-producers-num {
+  color: #94a3b8 !important;  /* slate-400 — visible on dark, matches slate icon */
+}
+
+/* #5 Filter bar — dark */
+.dark .filter-bar-dark {
+  background-color: #1a1d2e !important;
+  border-color: #2a2d3e !important;
+}
+.dark .filter-dropdown-dark {
+  background-color: #1e2130 !important;
+  color: #e5e7eb !important;
+  border-color: #2a2d3e !important;
 }
 
 /* ─── Leaflet vs app chrome (stacking) ───────────────────────── */

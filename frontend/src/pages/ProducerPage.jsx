@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Sparkle, FileText, CheckCircle, TreeStructure, CalendarBlank, Warning, ArrowRight, Gauge, GitFork } from '@phosphor-icons/react'
-import { getProducerDetail, getProducerAdvice, getProducerConfidence, getCounterfactual } from '../services/api'
+import { ArrowLeft, Sparkle, FileText, CheckCircle, TreeStructure, CalendarBlank, Warning, ArrowRight, Gauge, GitFork, Info, Lightbulb, MapPin, Signpost } from '@phosphor-icons/react'
+import { getProducerDetail, getProducerAdvice, getProducerConfidence, getCounterfactual, getProducerRisk } from '../services/api'
 import { Badge } from '../components/ui/Badge'
 import { Skeleton } from '../components/ui/Skeleton'
 import { CardHeader } from '../components/ui/Card'
@@ -12,6 +12,22 @@ function ScoreBadge({ score }) {
   if (score >= 0.8) return <Badge variant="success">{(score * 100).toFixed(1)}%</Badge>
   if (score >= 0.6) return <Badge variant="warning">{(score * 100).toFixed(1)}%</Badge>
   return <Badge variant="error">{(score * 100).toFixed(1)}%</Badge>
+}
+
+function CounterfactualTooltip() {
+  return (
+    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
+      <div className="flex items-start gap-2">
+        <Info size={13} className="text-blue-500 mt-0.5 flex-shrink-0" weight="fill" />
+        <div>
+          <p className="text-[11px] font-semibold text-blue-800 mb-0.5">Что такое контрфактуальный анализ?</p>
+          <p className="text-[11px] text-blue-700 leading-relaxed">
+            Ответ на вопрос: <strong>«Что нужно изменить, чтобы получить одобрение?»</strong> Система находит минимальные изменения в ваших данных, которые переведут скор через порог одобрения.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function DeltaBadge({ delta }) {
@@ -75,6 +91,14 @@ export default function ProducerPage() {
     staleTime: 300_000,
   })
 
+  const { data: riskProfile } = useQuery({
+    queryKey: ['risk', id],
+    queryFn: () => getProducerRisk(id),
+    enabled: !!id,
+    staleTime: 300_000,
+    retry: 1,
+  })
+
   if (isLoading) {
     return (
       <div className="space-y-5">
@@ -113,9 +137,23 @@ export default function ProducerPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-slate-900 font-mono tracking-tight">{producer.producer_id}</h1>
           <span className="text-xs text-slate-400 font-normal">·</span>
-          <span className="text-sm text-slate-500">{producer.region}</span>
+          <button
+            onClick={() => navigate(`/dashboard?region=${encodeURIComponent(producer.region)}`)}
+            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+            title={`Фильтр по региону: ${producer.region}`}
+          >
+            <MapPin size={12} weight="fill" />
+            {producer.region}
+          </button>
           <span className="text-xs text-slate-300">·</span>
-          <span className="text-sm text-slate-500">{producer.direction}</span>
+          <button
+            onClick={() => navigate(`/dashboard?direction=${encodeURIComponent(producer.direction)}`)}
+            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+            title={`Фильтр по направлению: ${producer.direction}`}
+          >
+            <Signpost size={12} weight="fill" />
+            {producer.direction}
+          </button>
           {producer.hidden_talent && <Badge variant="hidden">★ Скрытый талант</Badge>}
           {producer.at_risk && <Badge variant="error">↓ Переоценён</Badge>}
         </div>
@@ -190,11 +228,24 @@ export default function ProducerPage() {
             </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+          <div className={`border rounded-xl p-5 ${
+            advice?._ai_status === 'not_configured'
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-blue-50 border-blue-200'
+          }`}>
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
-                <Sparkle size={13} className="text-blue-600" weight="fill" />
-                <span className="text-blue-700 font-semibold text-xs tracking-wide">SubsidyLens AI — объяснение балла</span>
+                <Sparkle size={13} className={
+                  advice?._ai_status === 'not_configured' ? 'text-amber-600' : 'text-blue-600'
+                } weight="fill" />
+                <span className={`font-semibold text-xs tracking-wide ${
+                  advice?._ai_status === 'not_configured' ? 'text-amber-700' : 'text-blue-700'
+                }`}>
+                  SubsidyLens AI — объяснение балла
+                  {advice?._ai_status === 'not_configured' && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-bold uppercase">Не настроен</span>
+                  )}
+                </span>
               </div>
               {adviceError && (
                 <button
@@ -209,7 +260,16 @@ export default function ProducerPage() {
               ? <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-4/5" /></div>
               : adviceError
                 ? <p className="text-sm text-blue-600 leading-relaxed opacity-70">Не удалось получить объяснение от SubsidyLens AI. Проверьте соединение и попробуйте снова.</p>
-                : <p className="text-sm text-slate-700 leading-relaxed">{advice?.score_explanation}</p>
+                : (
+                  <div>
+                    <p className={`text-sm leading-relaxed ${
+                      advice?._ai_status === 'not_configured' ? 'text-amber-800' : 'text-slate-700'
+                    }`}>{advice?.score_explanation}</p>
+                    {advice?._ai_status === 'not_configured' && (
+                      <p className="text-xs text-amber-700 mt-2 leading-relaxed">{advice?.baseline_injustice}</p>
+                    )}
+                  </div>
+                )
             }
           </div>
 
@@ -267,6 +327,7 @@ export default function ProducerPage() {
                 subtitle={`Минимальные изменения для прохода порога ${(counterfactual.threshold * 100).toFixed(1)}%`}
               />
               <div className="p-5">
+                <CounterfactualTooltip />
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1 bg-slate-100 rounded-lg p-2.5 text-center">
                     <div className="text-[10px] text-slate-400 font-medium mb-1">Сейчас</div>
@@ -305,7 +366,65 @@ export default function ProducerPage() {
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Risk Profile */}
+          {riskProfile && riskProfile.signal_count > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader
+                title="Индикаторы риска"
+                subtitle={`Уровень: ${riskProfile.risk_level === 'low' ? 'Низкий' : riskProfile.risk_level === 'medium' ? 'Средний' : riskProfile.risk_level === 'high' ? 'Высокий' : 'Критический'}`}
+              />
+              <div className="p-5">
+                {/* Overall risk bar */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-500 font-medium">Общий риск</span>
+                    <span className={`text-sm font-bold ${
+                      riskProfile.overall_risk < 20 ? 'text-green-600' :
+                      riskProfile.overall_risk < 45 ? 'text-amber-600' :
+                      riskProfile.overall_risk < 70 ? 'text-orange-600' : 'text-red-600'
+                    }`}>
+                      {riskProfile.overall_risk}/100
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        riskProfile.overall_risk < 20 ? 'bg-green-500' :
+                        riskProfile.overall_risk < 45 ? 'bg-amber-500' :
+                        riskProfile.overall_risk < 70 ? 'bg-orange-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(100, riskProfile.overall_risk)}%` }}
+                    />
+                  </div>
+                </div>
+                {/* Individual signals */}
+                <div className="space-y-2">
+                  {(riskProfile.signals || []).map((signal, i) => (
+                    <div key={i} className="rounded-lg border border-slate-100 overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50">
+                        <Warning size={11} className={`${
+                          signal.severity > 70 ? 'text-red-500' : signal.severity > 40 ? 'text-amber-500' : 'text-slate-400'
+                        }`} weight="fill" />
+                        <span className="text-xs font-semibold text-slate-700 flex-1">{signal.title}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          signal.severity > 70 ? 'bg-red-50 text-red-600' :
+                          signal.severity > 40 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {signal.severity}
+                        </span>
+                      </div>
+                      <div className="px-3 py-2">
+                        <p className="text-[11px] text-slate-600 leading-relaxed">{signal.description}</p>
+                        <p className="text-[10px] text-green-700 mt-1 font-medium">→ {signal.action}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-gradient-to-br from-slate-50 to-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <CardHeader title="Что улучшить" subtitle="Конкретные шаги для роста ML-балла" />
             <div className="p-5">
               {adviceLoading ? (
@@ -319,9 +438,9 @@ export default function ProducerPage() {
                     // Support both structured {problem,cause,action} and legacy {text} formats
                     const hasPCA = rec.problem && rec.cause && rec.action
                     return (
-                      <div key={i} className="rounded-xl border overflow-hidden" style={{ borderColor: '#FCD34D' }}>
+                      <div key={i} className="rounded-xl border overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow duration-200" style={{ borderColor: '#FDE68A' }}>
                         {/* Header: problem */}
-                        <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2" style={{ background: '#FFFBEB' }}>
+                        <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2" style={{ background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)' }}>
                           <Warning size={13} className="text-amber-500 mt-0.5 flex-shrink-0" weight="fill" />
                           <p className="text-xs font-semibold text-amber-800 leading-snug flex-1">
                             {hasPCA ? rec.problem : rec.text}
@@ -329,14 +448,14 @@ export default function ProducerPage() {
                           <ImpactBadge impact={rec.impact} />
                         </div>
                         {hasPCA && (
-                          <div className="px-3.5 pb-3 pt-1 space-y-1.5" style={{ background: '#FFFBEB' }}>
+                          <div className="px-3.5 pb-3 pt-1.5 space-y-2" style={{ background: '#FFFBEB' }}>
                             {/* Cause */}
                             <div className="flex items-start gap-2">
-                              <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider mt-0.5 w-14 flex-shrink-0">Причина</span>
+                              <span className="text-[9px] font-bold text-amber-500 uppercase tracking-wider mt-0.5 w-14 flex-shrink-0">Причина</span>
                               <p className="text-xs text-slate-600 leading-relaxed">{rec.cause}</p>
                             </div>
                             {/* Action */}
-                            <div className="flex items-start gap-2 pt-1 border-t border-amber-100">
+                            <div className="flex items-start gap-2 pt-1.5 border-t border-amber-100">
                               <span className="text-[9px] font-bold text-green-600 uppercase tracking-wider mt-0.5 w-14 flex-shrink-0 flex items-center gap-0.5">
                                 <ArrowRight size={9} weight="bold" />Действие
                               </span>
@@ -348,7 +467,10 @@ export default function ProducerPage() {
                     )
                   })}
                   {(!advice?.recommendations || advice.recommendations.length === 0) && (
-                    <p className="text-xs text-slate-400 text-center py-4">Нет рекомендаций</p>
+                    <div className="text-center py-6">
+                      <Lightbulb size={24} className="text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs text-slate-400">Нет рекомендаций</p>
+                    </div>
                   )}
                 </div>
               )}

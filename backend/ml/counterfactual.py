@@ -15,7 +15,7 @@ ACTIONABLE_FEATURES = {
     "log_amount": {"name": "Сумма заявки", "direction": "both", "step": 0.5, "min": 5, "max": 20},
 }
 
-# Неуправляемые — регион, направление, агрегаты (менять нельзя)
+# Неуправляемые — регион, направление, агрегаты, v7 features (менять нельзя)
 IMMUTABLE_FEATURES = {
     "region_enc", "direction_enc", "subsidy_enc",
     "reg_sr", "reg_vol", "reg_avg_amt",
@@ -24,6 +24,10 @@ IMMUTABLE_FEATURES = {
     "dist_sr", "dist_vol", "dist_avg_amt",
     "Норматив", "Причитающая сумма", "log_norm",
     "day_of_year",
+    # v7 features
+    "month_amount_inter", "norm_per_app", "completion_trend",
+    "app_frequency", "amount_consistency", "region_bias",
+    "rel_amount_in_region", "rel_amount_in_direction",
 }
 
 
