@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+**/.env
+backend/model.pkl
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Data — реальные данные не в git
+backend/data/*.xlsx
+backend/data/*.csv
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude
+CLAUDE.md
+.claude/
+PROMPT_SCAFFOLDING.md
+
+# Docs
+*.docx
+*.doc

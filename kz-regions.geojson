@@ -1,0 +1,100 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Алматы", "name_kz": "Алматы қаласы", "id": "KZ-ALA" },
+      "geometry": { "type": "Polygon", "coordinates": [[[76.7, 43.1],[77.3, 43.1],[77.3, 43.5],[76.7, 43.5],[76.7, 43.1]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Астана", "name_kz": "Астана қаласы", "id": "KZ-AST" },
+      "geometry": { "type": "Polygon", "coordinates": [[[71.2, 51.1],[71.7, 51.1],[71.7, 51.5],[71.2, 51.5],[71.2, 51.1]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Шымкент", "name_kz": "Шымкент қаласы", "id": "KZ-SHY" },
+      "geometry": { "type": "Polygon", "coordinates": [[[69.4, 42.2],[70.0, 42.2],[70.0, 42.6],[69.4, 42.6],[69.4, 42.2]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Акмолинская", "name_kz": "Ақмола облысы", "id": "KZ-AKM" },
+      "geometry": { "type": "Polygon", "coordinates": [[[67.0, 50.5],[73.5, 50.5],[73.5, 54.5],[67.0, 54.5],[67.0, 50.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Актобе", "name_kz": "Ақтөбе облысы", "id": "KZ-AKT" },
+      "geometry": { "type": "Polygon", "coordinates": [[[55.0, 47.0],[63.5, 47.0],[63.5, 51.5],[55.0, 51.5],[55.0, 47.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Алматинская", "name_kz": "Алматы облысы", "id": "KZ-ALM" },
+      "geometry": { "type": "Polygon", "coordinates": [[[74.0, 42.5],[82.0, 42.5],[82.0, 46.5],[74.0, 46.5],[74.0, 42.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Атырауская", "name_kz": "Атырау облысы", "id": "KZ-ATY" },
+      "geometry": { "type": "Polygon", "coordinates": [[[51.0, 45.5],[56.5, 45.5],[56.5, 49.0],[51.0, 49.0],[51.0, 45.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Западно-Казахстанская", "name_kz": "Батыс Қазақстан облысы", "id": "KZ-ZAP" },
+      "geometry": { "type": "Polygon", "coordinates": [[[49.5, 49.0],[55.5, 49.0],[55.5, 52.5],[49.5, 52.5],[49.5, 49.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Жамбылская", "name_kz": "Жамбыл облысы", "id": "KZ-ZHM" },
+      "geometry": { "type": "Polygon", "coordinates": [[[68.0, 42.0],[74.5, 42.0],[74.5, 45.5],[68.0, 45.5],[68.0, 42.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Карагандинская", "name_kz": "Қарағанды облысы", "id": "KZ-KAR" },
+      "geometry": { "type": "Polygon", "coordinates": [[[63.0, 46.5],[78.0, 46.5],[78.0, 51.0],[63.0, 51.0],[63.0, 46.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Костанайская", "name_kz": "Қостанай облысы", "id": "KZ-KUS" },
+      "geometry": { "type": "Polygon", "coordinates": [[[60.5, 50.5],[67.5, 50.5],[67.5, 54.5],[60.5, 54.5],[60.5, 50.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Кызылординская", "name_kz": "Қызылорда облысы", "id": "KZ-KZY" },
+      "geometry": { "type": "Polygon", "coordinates": [[[59.0, 43.5],[68.5, 43.5],[68.5, 47.0],[59.0, 47.0],[59.0, 43.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Мангистауская", "name_kz": "Маңғыстау облысы", "id": "KZ-MAN" },
+      "geometry": { "type": "Polygon", "coordinates": [[[50.5, 42.5],[57.0, 42.5],[57.0, 46.5],[50.5, 46.5],[50.5, 42.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Павлодарская", "name_kz": "Павлодар облысы", "id": "KZ-PAV" },
+      "geometry": { "type": "Polygon", "coordinates": [[[73.5, 50.0],[80.5, 50.0],[80.5, 54.5],[73.5, 54.5],[73.5, 50.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Северо-Казахстанская", "name_kz": "Солтүстік Қазақстан облысы", "id": "KZ-SEV" },
+      "geometry": { "type": "Polygon", "coordinates": [[[67.0, 53.0],[73.5, 53.0],[73.5, 56.5],[67.0, 56.5],[67.0, 53.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Туркестанская", "name_kz": "Түркістан облысы", "id": "KZ-TUR" },
+      "geometry": { "type": "Polygon", "coordinates": [[[64.5, 40.0],[70.5, 40.0],[70.5, 43.5],[64.5, 43.5],[64.5, 40.0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Восточно-Казахстанская", "name_kz": "Шығыс Қазақстан облысы", "id": "KZ-VKO" },
+      "geometry": { "type": "Polygon", "coordinates": [[[79.0, 46.5],[87.5, 46.5],[87.5, 50.5],[79.0, 50.5],[79.0, 46.5]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Семей", "name_kz": "Семей қаласы", "id": "KZ-SEM" },
+      "geometry": { "type": "Polygon", "coordinates": [[[80.0, 49.8],[81.2, 49.8],[81.2, 50.5],[80.0, 50.5],[80.0, 49.8]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Тараз", "name_kz": "Тараз қаласы", "id": "KZ-TAR" },
+      "geometry": { "type": "Polygon", "coordinates": [[[71.2, 42.7],[72.0, 42.7],[72.0, 43.2],[71.2, 43.2],[71.2, 42.7]]] }
+    }
+  ]
+}
